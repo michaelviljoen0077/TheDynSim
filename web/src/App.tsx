@@ -2,6 +2,7 @@ import { WorldCanvas } from './world/WorldCanvas';
 import { Hud } from './ui/Hud';
 import { EvolutionPanel } from './ui/EvolutionPanel';
 import { MetricsPanel } from './ui/MetricsPanel';
+import { InspectorPanel } from './ui/InspectorPanel';
 
 export function App() {
   return (
@@ -10,6 +11,7 @@ export function App() {
       <Hud />
       <EvolutionPanel />
       <MetricsPanel />
+      <InspectorPanel />
     </div>
   );
 }

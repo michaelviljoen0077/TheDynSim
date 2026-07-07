@@ -216,6 +216,32 @@
   margin: 0;
 }
 
+.overlay-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+.overlay-btn {
+  flex: 1;
+  background: rgba(75, 225, 255, 0.06);
+  border: 1px solid rgba(75, 225, 255, 0.22);
+  color: #8fa1b5;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 3px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.overlay-btn:hover {
+  color: #4be1ff;
+}
+.overlay-btn.active {
+  color: #08111c;
+  background: #4be1ff;
+  border-color: #4be1ff;
+}
+
 .world-waiting {
   height: 100%;
   display: flex;

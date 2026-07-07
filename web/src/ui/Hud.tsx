@@ -8,6 +8,11 @@ const STRATA: { index: 0 | 1 | 2; label: string }[] = [
   { index: 2, label: 'Sky' },
   { index: 0, label: 'Underground (x-ray)' },
 ];
+const OVERLAYS: { value: 'none' | 'flora' | 'water'; label: string }[] = [
+  { value: 'none', label: 'Terrain' },
+  { value: 'flora', label: 'Flora' },
+  { value: 'water', label: 'Water' },
+];
 
 function control(cmd: 'start' | 'pause' | 'step' | 'reset'): void {
   void fetch(`/api/control/${cmd}`, { method: 'POST' }).catch(() => undefined);
@@ -37,6 +42,8 @@ export function Hud() {
   const strata = useStore((s) => s.strata);
   const toggleSpecies = useStore((s) => s.toggleSpecies);
   const toggleStratum = useStore((s) => s.toggleStratum);
+  const overlay = useStore((s) => s.overlay);
+  const setOverlay = useStore((s) => s.setOverlay);
 
   const [tps, setTps] = useState(20);
   const speedTimer = useRef<number | undefined>(undefined);
@@ -148,6 +155,18 @@ export function Hud() {
               />
               {label}
             </label>
+          ))}
+        </div>
+        <div className="overlay-row">
+          {OVERLAYS.map(({ value, label }) => (
+            <button
+              key={value}
+              className={`overlay-btn ${overlay === value ? 'active' : ''}`}
+              onClick={() => setOverlay(value)}
+              title={`${label} heat-map overlay`}
+            >
+              {label}
+            </button>
           ))}
         </div>
       </div>

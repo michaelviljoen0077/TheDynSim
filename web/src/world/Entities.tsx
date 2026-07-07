@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { heightAt, live } from '../net/frames';
 import { useStore, type SpeciesInfo } from '../state/store';
@@ -11,9 +11,11 @@ const counters = new Map<number, number>();
 function SpeciesMesh({
   info,
   meshes,
+  onPick,
 }: {
   info: SpeciesInfo;
   meshes: Map<number, THREE.InstancedMesh>;
+  onPick: (speciesId: number, instanceId: number) => void;
 }) {
   const ref = useCallback(
     (m: THREE.InstancedMesh | null) => {
@@ -28,8 +30,18 @@ function SpeciesMesh({
     [info.id, meshes],
   );
   const radius = info.size > 0 ? info.size : 0.5;
+  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+    if (e.instanceId === undefined) return;
+    e.stopPropagation();
+    onPick(info.id, e.instanceId);
+  };
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, CAPACITY]} frustumCulled={false}>
+    <instancedMesh
+      ref={ref}
+      args={[undefined, undefined, CAPACITY]}
+      frustumCulled={false}
+      onClick={handleClick}
+    >
       <sphereGeometry args={[radius, 10, 8]} />
       <meshStandardMaterial color={info.color} roughness={0.55} metalness={0.05} />
     </instancedMesh>
@@ -39,6 +51,16 @@ function SpeciesMesh({
 export function Entities() {
   const species = useStore((s) => s.sync?.species);
   const meshes = useRef(new Map<number, THREE.InstancedMesh>());
+  // Per-species map from packed instance slot -> generational entity id, so a
+  // click's instanceId resolves back to the entity the inspector queries.
+  const idBuffers = useRef(new Map<number, Uint32Array>());
+
+  const onPick = useCallback((speciesId: number, instanceId: number) => {
+    const ids = idBuffers.current.get(speciesId);
+    if (ids && instanceId < ids.length) {
+      useStore.getState().selectEntity(ids[instanceId]);
+    }
+  }, []);
 
   useFrame(() => {
     const map = meshes.current;
@@ -82,6 +104,12 @@ export function Entities() {
       if (k >= CAPACITY) continue;
       tmpMatrix.makeTranslation(x, worldY, y);
       mesh.setMatrixAt(k, tmpMatrix);
+      let ids = idBuffers.current.get(spId);
+      if (!ids) {
+        ids = new Uint32Array(CAPACITY);
+        idBuffers.current.set(spId, ids);
+      }
+      ids[k] = curr.id[i];
       counters.set(spId, k + 1);
     }
     map.forEach((m, id) => {
@@ -94,7 +122,7 @@ export function Entities() {
   return (
     <group>
       {species.map((sp) => (
-        <SpeciesMesh key={sp.id} info={sp} meshes={meshes.current} />
+        <SpeciesMesh key={sp.id} info={sp} meshes={meshes.current} onPick={onPick} />
       ))}
     </group>
   );

@@ -1,0 +1,86 @@
+/* Entity inspector — appears top-center when an entity is picked in the world. */
+
+.inspector-panel {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  pointer-events: auto;
+  background: rgba(8, 12, 20, 0.9);
+  border: 1px solid rgba(75, 225, 255, 0.3);
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+  color: #c7d3e0;
+  padding: 8px 10px 10px;
+  z-index: 7;
+}
+
+.inspector-header {
+  display: flex;
+  align-items: center;
+  letter-spacing: 0.14em;
+  font-size: 10px;
+  color: #4be1ff;
+  margin-bottom: 6px;
+}
+.inspector-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #6b7a8c;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.inspector-close:hover {
+  color: #ff8a7a;
+}
+
+.inspector-species {
+  color: #e8f1fa;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.inspector-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+}
+.inspector-grid .k {
+  color: #6b7a8c;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.inspector-grid .v {
+  color: #e8f1fa;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspector-lab {
+  margin-top: 8px;
+  width: 100%;
+  background: rgba(75, 225, 255, 0.08);
+  border: 1px solid rgba(75, 225, 255, 0.35);
+  color: #4be1ff;
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.inspector-lab:hover {
+  background: rgba(75, 225, 255, 0.2);
+}
+
+.inspector-gone {
+  color: #6b7a8c;
+  font-style: italic;
+  padding: 4px 0;
+}

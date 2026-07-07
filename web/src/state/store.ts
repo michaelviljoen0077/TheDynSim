@@ -42,6 +42,8 @@ export interface FrameInfo {
 
 export type ConnStatus = 'connecting' | 'connected' | 'reconnecting';
 
+export type Overlay = 'none' | 'flora' | 'water';
+
 interface GenesisStore {
   status: ConnStatus;
   sync: SyncInfo | null;
@@ -53,6 +55,12 @@ interface GenesisStore {
   strata: [boolean, boolean, boolean];
   /** Bumped whenever a kind-1 terrain frame arrives (data itself lives outside React). */
   terrainVersion: number;
+  /** Terrain heat-map overlay mode (Story 4.4). */
+  overlay: Overlay;
+  /** Generational id of the entity picked in the 3D world, or null (Story 4.4). */
+  selectedEntity: number | null;
+  /** Code-lab plugin key to focus when opened via a deep-link, or null (Story 4.3). */
+  labFocus: string | null;
 
   setStatus: (status: ConnStatus) => void;
   setSync: (sync: SyncInfo) => void;
@@ -61,6 +69,9 @@ interface GenesisStore {
   toggleSpecies: (id: number) => void;
   toggleStratum: (index: 0 | 1 | 2) => void;
   bumpTerrain: () => void;
+  setOverlay: (overlay: Overlay) => void;
+  selectEntity: (id: number | null) => void;
+  openLab: (key: string | null) => void;
 }
 
 export const useStore = create<GenesisStore>()((set) => ({
@@ -71,6 +82,9 @@ export const useStore = create<GenesisStore>()((set) => ({
   hiddenSpecies: {},
   strata: [false, true, true],
   terrainVersion: 0,
+  overlay: 'none',
+  selectedEntity: null,
+  labFocus: null,
 
   setStatus: (status) => set({ status }),
   setSync: (sync) => set({ sync }),
@@ -87,4 +101,7 @@ export const useStore = create<GenesisStore>()((set) => ({
       return { strata };
     }),
   bumpTerrain: () => set((s) => ({ terrainVersion: s.terrainVersion + 1 })),
+  setOverlay: (overlay) => set({ overlay }),
+  selectEntity: (selectedEntity) => set({ selectedEntity }),
+  openLab: (labFocus) => set({ labFocus }),
 }));

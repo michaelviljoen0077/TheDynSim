@@ -1,6 +1,7 @@
 import { WorldCanvas } from './world/WorldCanvas';
 import { Hud } from './ui/Hud';
 import { EvolutionPanel } from './ui/EvolutionPanel';
+import { MetricsPanel } from './ui/MetricsPanel';
 
 export function App() {
   return (
@@ -8,6 +9,7 @@ export function App() {
       <WorldCanvas />
       <Hud />
       <EvolutionPanel />
+      <MetricsPanel />
     </div>
   );
 }

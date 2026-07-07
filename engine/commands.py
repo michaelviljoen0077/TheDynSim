@@ -1,0 +1,103 @@
+"""Command buffer: all plugin-visible mutations queue here and apply at tick end.
+
+Reads see tick-start state; iteration during mutation is therefore safe by
+construction. Ops referencing stale generational handles are counted and
+skipped — recorded, never corrupting (coding standard #6, docs/architecture.md).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import numpy as np
+
+from engine.entities import GEN_BITS, GEN_MASK, EntityStore
+
+OP_SPAWN = 0
+OP_REMOVE = 1
+OP_MOVE = 2
+OP_SET_ENERGY = 3
+OP_SET_PROP = 4
+OP_SET_STRATUM = 5
+
+
+@dataclass
+class CommandBuffer:
+    ops: list[tuple] = field(default_factory=list)
+    stale_ops: int = 0
+    spawned_handles: list[int] = field(default_factory=list)
+
+    def spawn(self, species_id: int, x: float, y: float, z: float,
+              stratum: int, energy: float, plugin_id: int = -1) -> None:
+        self.ops.append((OP_SPAWN, species_id, x, y, z, stratum, energy, plugin_id))
+
+    def remove(self, handle: int) -> None:
+        self.ops.append((OP_REMOVE, handle))
+
+    def move(self, handle: int, dx: float, dy: float, dz: float = 0.0) -> None:
+        self.ops.append((OP_MOVE, handle, dx, dy, dz))
+
+    def set_energy(self, handle: int, value: float) -> None:
+        self.ops.append((OP_SET_ENERGY, handle, value))
+
+    def set_prop(self, handle: int, slot: int, value: float) -> None:
+        self.ops.append((OP_SET_PROP, handle, slot, value))
+
+    def set_stratum(self, handle: int, stratum: int) -> None:
+        self.ops.append((OP_SET_STRATUM, handle, stratum))
+
+    def apply(self, store: EntityStore, world_max: float) -> None:
+        """Apply ops in submission order (deterministic). Clamp positions to world bounds.
+
+        Position math batches through Python-float staging dicts and writes back
+        vectorized — per-element NumPy scalar read-modify-write is the hot-path
+        killer (Spike A / benchmark finding).
+        """
+        hi = world_max - 1e-3
+        self.spawned_handles.clear()
+        alive = store.alive
+        generation = store.generation
+        moved: dict[int, tuple[float, float, float]] = {}
+        xs = store.px
+        ys = store.py
+        zs = store.pz
+        for op in self.ops:
+            kind = op[0]
+            if kind == OP_SPAWN:
+                _, species_id, x, y, z, stratum, energy, plugin_id = op
+                x = min(max(x, 0.0), hi)
+                y = min(max(y, 0.0), hi)
+                self.spawned_handles.append(
+                    store.spawn(species_id, x, y, z, stratum, energy, plugin_id)
+                )
+                continue
+            handle = op[1]
+            i = handle >> GEN_BITS
+            if not (0 <= i < store.capacity and alive[i]
+                    and int(generation[i]) == (handle & GEN_MASK)):
+                self.stale_ops += 1
+                continue
+            if kind == OP_REMOVE:
+                store.remove(handle)
+                moved.pop(i, None)
+            elif kind == OP_MOVE:
+                _, _, dx, dy, dz = op
+                cx, cy, cz = moved.get(i) or (float(xs[i]), float(ys[i]), float(zs[i]))
+                moved[i] = (
+                    min(max(cx + dx, 0.0), hi),
+                    min(max(cy + dy, 0.0), hi),
+                    cz + dz,
+                )
+            elif kind == OP_SET_ENERGY:
+                store.energy[i] = op[2]
+            elif kind == OP_SET_PROP:
+                store.props[i, op[2]] = op[3]
+            elif kind == OP_SET_STRATUM:
+                store.stratum[i] = op[2]
+        if moved:
+            rows = np.fromiter(moved.keys(), dtype=np.int64, count=len(moved))
+            vals = np.array(list(moved.values()), dtype=np.float32)
+            xs[rows] = vals[:, 0]
+            ys[rows] = vals[:, 1]
+            zs[rows] = vals[:, 2]
+        self.ops.clear()

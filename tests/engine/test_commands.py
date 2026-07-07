@@ -1,0 +1,58 @@
+"""Story 1.2 AC5: mutation during iteration is safe; stale ops are skipped, not fatal."""
+
+from engine import World, WorldConfig
+from engine.entities import SURFACE, handle_index
+
+
+def make_world():
+    w = World(WorldConfig(seed=5, size=64, initial_capacity=256))
+    sp = w.registry.register("bug")
+    return w, sp
+
+
+def test_reads_see_tick_start_state():
+    w, sp = make_world()
+    h = w.store.spawn(sp.id, 10.0, 10.0, 0.0, SURFACE, 100.0)
+    w.commands.move(h, 5.0, 0.0)
+    i = handle_index(h)
+    assert w.store.px[i] == 10.0          # not yet applied
+    w.step()
+    assert w.store.px[i] == 15.0          # applied at tick end
+
+
+def test_mutate_while_iterating_is_safe():
+    w, sp = make_world()
+    for k in range(20):
+        w.store.spawn(sp.id, float(k), 0.0, 0.0, SURFACE, 50.0)
+    rows = w.store.alive_indices(sp.id)
+    handles = w.store.handles_of(rows)
+    # "plugin" removes some and spawns some while iterating the tick-start view
+    for n, h in enumerate(handles):
+        if n % 2 == 0:
+            w.commands.remove(h)
+        else:
+            w.commands.spawn(sp.id, 30.0, 30.0, 0.0, SURFACE, 25.0, -1)
+    w.step()
+    assert w.store.count == 20 - 10 + 10
+    assert w.commands.stale_ops == 0
+
+
+def test_stale_handle_ops_are_counted_and_skipped():
+    w, sp = make_world()
+    h = w.store.spawn(sp.id, 1.0, 1.0, 0.0, SURFACE, 10.0)
+    w.commands.remove(h)
+    w.commands.move(h, 3.0, 3.0)          # queued against a handle removed earlier in the buffer
+    w.commands.set_energy(h, 99.0)
+    w.step()
+    assert w.store.count == 0
+    assert w.commands.stale_ops == 2
+
+
+def test_positions_clamped_to_world():
+    w, sp = make_world()
+    h = w.store.spawn(sp.id, 1.0, 1.0, 0.0, SURFACE, 10.0)
+    w.commands.move(h, -50.0, 1e6)
+    w.step()
+    i = handle_index(h)
+    assert w.store.px[i] == 0.0
+    assert w.store.py[i] < w.config.size

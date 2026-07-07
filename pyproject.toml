@@ -1,0 +1,33 @@
+[project]
+name = "genesis-v2"
+version = "0.1.0"
+description = "Genesis v2 — self-evolving 3D artificial-life simulator (The Living World)"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "pydantic>=2.6", "sqlalchemy>=2.0"]
+dev = ["pytest>=8.0", "ruff>=0.4", "hypothesis>=6.100"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["engine*", "governor*", "server*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["legacy", "web", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]

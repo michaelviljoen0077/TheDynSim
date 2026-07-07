@@ -1,0 +1,46 @@
+"""World configuration. Plain dataclass — the engine stays pydantic-free."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+
+
+@dataclass(frozen=True)
+class WorldConfig:
+    seed: int = 424242
+    size: int = 256                  # world is size x size columns
+    initial_capacity: int = 16384    # entity store starting capacity
+    max_prop_slots: int = 8          # per-species named float slots
+
+    # clock — chosen so a 2,000-tick shadow run covers >= 1 day-night cycle
+    # and >= 1 season transition (shadow-horizon rule, docs/architecture.md)
+    ticks_per_day: int = 600
+    days_per_season: int = 3
+    seasons_per_year: int = 4
+
+    # terrain / hydrology
+    sea_level_quantile: float = 0.30
+    terrain_octaves: int = 5
+
+    # per-plugin quotas (enforced by WorldAPI; here so shadow == live)
+    max_entities_per_plugin: int = 4000
+    max_spawns_per_tick: int = 200
+    max_store_keys: int = 64
+
+    extra: dict = field(default_factory=dict)  # forward-compatible bag
+
+    @property
+    def ticks_per_season(self) -> int:
+        return self.ticks_per_day * self.days_per_season
+
+    @property
+    def ticks_per_year(self) -> int:
+        return self.ticks_per_season * self.seasons_per_year
+
+    def to_json(self) -> str:
+        return json.dumps(asdict(self), sort_keys=True)
+
+    @classmethod
+    def from_json(cls, s: str) -> WorldConfig:
+        return cls(**json.loads(s))

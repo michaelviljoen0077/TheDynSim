@@ -12,7 +12,7 @@ import numpy as np
 
 from engine.commands import CommandBuffer
 from engine.config import WorldConfig
-from engine.entities import SKY, SURFACE, UNDERGROUND, EntityStore, SpeciesRegistry
+from engine.entities import SKY, SURFACE, UNDERGROUND, EntityStore, SpeciesRegistry, make_handle
 from engine.fields import Flora, Terrain, Weather
 from engine.spatial import SpatialHash
 
@@ -129,7 +129,7 @@ class World:
                 cause = "drowning"
             else:
                 cause = "starvation"
-            handle = (row << 16) | int(store.generation[row])
+            handle = make_handle(row, store.generation[row])
             store.remove(handle)
             self.record_death(species, cause)
         self._predation_marks.clear()

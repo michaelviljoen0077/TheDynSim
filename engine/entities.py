@@ -25,6 +25,10 @@ def handle_generation(handle: int) -> int:
     return handle & GEN_MASK
 
 
+def make_handle(row: int, generation: int) -> int:
+    return (row << GEN_BITS) | int(generation)
+
+
 @dataclass
 class Species:
     id: int

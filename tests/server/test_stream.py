@@ -104,17 +104,27 @@ def test_streaming_gil_gate(client):
     """
     runner = client.app.state.runner
     client.post("/api/control/speed", json={"tps": 240})  # unconstrained-ish
-    time.sleep(2.0)
-    t0 = runner.world.tick
-    time.sleep(3.0)
-    headless_rate = (runner.world.tick - t0) / 3.0
-    with client.websocket_connect("/ws") as ws:
-        read_json(ws, "sync")
+
+    def measure() -> tuple[float, float]:
+        time.sleep(1.5)
         t0 = runner.world.tick
-        end = time.time() + 3.0
-        while time.time() < end:
-            ws.receive()  # keep consuming so the server keeps sending
-        streaming_rate = (runner.world.tick - t0) / 3.0
-    assert streaming_rate >= 0.8 * headless_rate, (
-        f"streaming {streaming_rate:.1f} tps < 80% of headless {headless_rate:.1f} tps"
+        time.sleep(3.0)
+        headless = (runner.world.tick - t0) / 3.0
+        with client.websocket_connect("/ws") as ws:
+            read_json(ws, "sync")
+            t0 = runner.world.tick
+            end = time.time() + 3.0
+            while time.time() < end:
+                ws.receive()  # keep consuming so the server keeps sending
+            streaming = (runner.world.tick - t0) / 3.0
+        return headless, streaming
+
+    # two attempts: this is a regression tripwire, not the protocol benchmark —
+    # a single window on a loaded CI box can catch a scheduling hiccup
+    for attempt in (1, 2):
+        headless_rate, streaming_rate = measure()
+        if streaming_rate >= 0.8 * headless_rate:
+            return
+    raise AssertionError(
+        f"streaming {streaming_rate:.1f} tps < 80% of headless {headless_rate:.1f} tps (2 attempts)"
     )

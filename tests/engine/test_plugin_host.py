@@ -34,7 +34,7 @@ def test_food_chain_runs(caplog):
     host = host_with_examples(world)
     grazers0 = world.store.alive_indices(world.registry.by_name["grazer"].id).size
     wolves0 = world.store.alive_indices(world.registry.by_name["wolf"].id).size
-    assert grazers0 == 60 and wolves0 == 5
+    assert grazers0 == 100 and wolves0 == 6
     world.run(600)
     grazers = world.store.alive_indices(world.registry.by_name["grazer"].id).size
     wolves = world.store.alive_indices(world.registry.by_name["wolf"].id).size
@@ -151,7 +151,7 @@ def test_lineage_replacement_adopts_species(tmp_path):
     sp = world.registry.by_name["grazer"]
     assert sp.plugin == "grazer_herd_v2"
     assert sp.speed == 2.0
-    assert "maturity" in sp.prop_slots            # layout preserved
+    assert "gestation" in sp.prop_slots           # layout preserved
     assert int(world.store.alive_indices(gid).size) == pop_before  # entities live on
 
     # child actually drives the herd; retired parent no longer ticks

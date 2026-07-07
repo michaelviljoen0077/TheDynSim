@@ -28,6 +28,37 @@ log = logging.getLogger("genesis.governor")
 
 API_REFERENCE_PATH = Path(__file__).resolve().parent.parent / "docs" / "plugin_api.md"
 
+# Per-candidate strategy directives: rotated across the batch so N candidates
+# explore genuinely different moves instead of converging on one idea. Each
+# candidate also sees what its siblings already proposed (see _build_prompt).
+STRATEGIES = [
+    {"name": "fill an empty niche",
+     "directive": "Introduce a NEW species that occupies a stratum or trophic role "
+                  "currently unused or thinly populated (e.g. an underground burrower, "
+                  "a sky forager, an aquatic swimmer with swim_speed>0, a decomposer)."},
+    {"name": "refine a live plugin",
+     "directive": "Pick the WEAKEST existing plugin from the report and improve it via a "
+                  "lineage mutation: set PLUGIN_META['lineage_parent'] to its name, declare "
+                  "its species, and re-tune the numbers (speed, energy, reproduction). Do "
+                  "NOT just add a new species — rework an existing one."},
+    {"name": "add a trophic link",
+     "directive": "Add a species that connects existing ones into a longer food chain: a "
+                  "predator of an unpredated species, or prey for a struggling predator. "
+                  "Use world.attack for predation."},
+    {"name": "environmental engineer",
+     "directive": "Introduce a species whose main effect is on the environment or other "
+                  "species indirectly (spreads/consumes flora, migrates between strata) to "
+                  "improve stability or diversity without simply adding biomass."},
+]
+
+
+def _species_of(source: str) -> list[str]:
+    """Best-effort species names from a candidate's PLUGIN_META (for sibling summaries)."""
+    from engine.validator import validate_plugin as _v
+    meta = _v(source).meta or {}
+    species = meta.get("species", [])
+    return species if isinstance(species, list) else []
+
 
 @dataclass
 class GovernorConfig:
@@ -117,11 +148,16 @@ class Orchestrator:
         self._measure_previous_outcome(report)
 
         recall = self.notebook.recall(live_species)
-        prompt = self._build_prompt(report, recall, live_sources)
 
         tokens_in = tokens_out = 0
         proposals = []
+        siblings: list[dict] = []  # what earlier candidates THIS cycle already proposed
         for i in range(cfg.n_candidates):
+            # each candidate gets a distinct strategy directive + the siblings
+            # already proposed, so the batch diverges instead of collapsing to
+            # three near-identical ideas
+            strategy = STRATEGIES[i % len(STRATEGIES)]
+            prompt = self._build_prompt(report, recall, live_sources, strategy, siblings)
             try:
                 proposal, usage = self.provider.generate(prompt)
                 tokens_in += usage.tokens_in
@@ -132,15 +168,19 @@ class Orchestrator:
                         {"code": "generation-failed", "message": str(e), "line": 0}]},
                     {}, {}, 0.0, "rejected_generation")
                 continue
+            siblings.append({"strategy": strategy["name"],
+                             "species": _species_of(proposal.plugin_source),
+                             "hypothesis": proposal.hypothesis[:160]})
             proposals.append((f"cand-{i}", proposal))
 
         # validate, with one repair round-trip (Story 3.4 AC3)
         self.status = CycleStatus("validating", cycle_id)
         validated = []
+        base_prompt = self._build_prompt(report, recall, live_sources, STRATEGIES[0], [])
         for label, proposal in proposals:
             result = validate_plugin(proposal.plugin_source)
             if not result.ok:
-                repair_prompt = self._build_repair_prompt(prompt, proposal, result)
+                repair_prompt = self._build_repair_prompt(base_prompt, proposal, result)
                 try:
                     proposal2, usage2 = self.provider.generate(repair_prompt)
                     tokens_in += usage2.tokens_in
@@ -281,13 +321,20 @@ class Orchestrator:
                                      measured, verdict)
         self._last_promotion = None
 
-    def _build_prompt(self, report: dict, recall: list[dict], live_sources: list[str]) -> str:
+    def _build_prompt(self, report: dict, recall: list[dict], live_sources: list[str],
+                      strategy: dict, siblings: list[dict]) -> str:
         import json as _json
         api_ref = API_REFERENCE_PATH.read_text() if API_REFERENCE_PATH.exists() else ""
         live_code = "\n\n".join(
             f"# ---- live plugin ----\n{src}" for src in live_sources
         )
         recall_txt = _json.dumps(recall, indent=1) if recall else "none yet"
+        if siblings:
+            sib_txt = ("\n\n## Ideas ALREADY proposed this cycle — you MUST do something "
+                       "clearly different (different species, stratum, or trophic role):\n"
+                       + _json.dumps(siblings, indent=1))
+        else:
+            sib_txt = ""
         return f"""You are the governor of a living 3D ecosystem simulation. You evolve the world by
 writing ONE new Python plugin per response, following the contract below exactly.
 
@@ -302,17 +349,20 @@ writing ONE new Python plugin per response, following the contract below exactly
 ## Currently live plugin source code
 {live_code}
 
+## Your assigned strategy for THIS candidate: {strategy["name"]}
+{strategy["directive"]}{sib_txt}
+
 ## Your task
-Analyze the ecosystem's weaknesses (imbalances, unused strata, fragile populations,
-low diversity). Then design ONE new plugin that makes the ecosystem measurably
-richer or more stable: a new species filling an empty niche, a rebalance mutation
-of an existing plugin (set lineage_parent), or environmental engineering.
+Follow your assigned strategy above. Design ONE new plugin that makes the ecosystem
+measurably richer or more stable. Analyze the observation report first — target a
+real weakness (an empty stratum, a fragile or missing trophic level, low diversity).
 
 Your candidate will be tested in a shadow simulation and scored on diversity,
 stability, extinction avoidance, trophic balance, and sustainability — RELATIVE to
 a control run without it. It must beat "do nothing" to be promoted. Your own
 species going extinct in the shadow run is heavily penalized: make sure it can
-feed itself and reproduce sustainably.
+feed itself and reproduce sustainably (reproduction should cost energy and take
+time — runaway breeders overcrowd and score badly).
 
 Respond with analysis, hypothesis, expected_outcome (concrete and measurable),
 confidence (0-1), lineage_parent (or null), and the complete plugin_source."""

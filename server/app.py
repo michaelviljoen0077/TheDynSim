@@ -41,7 +41,7 @@ class InstallBody(BaseModel):
     source: str
 
 
-def create_app(seed: int = 424242, world_size: int = 384) -> FastAPI:
+def create_app(seed: int = 424242, world_size: int = 640) -> FastAPI:
     sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
     runner = EngineRunner(WorldConfig(seed=seed, size=world_size), plugin_sources=sources)
 

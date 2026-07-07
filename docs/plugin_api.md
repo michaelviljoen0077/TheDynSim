@@ -110,6 +110,18 @@ def on_tick(world):
 - `world.size` — world edge length; positions span `0 .. world.size - 1`.
 - Strata constants: `world.UNDERGROUND` (0), `world.SURFACE` (1), `world.SKY` (2).
 
+## Reproduction (design guidance, not an engine feature)
+
+The engine has NO built-in breeding — reproduction is behavior you author, which
+means **litter size and gestation period are yours to set per species** and should
+differ by animal. The reference plugins show the pattern: a `gestation` prop holds
+a single countdown (one pregnancy at a time — a pregnant animal can't start
+another), started only when the parent is mature (`age`) and has an energy surplus,
+paid for with an up-front energy cost, and yielding a species-appropriate litter at
+term. Grazers: ~160-tick pregnancy, litter 1–2. Wolves: ~60-tick, single cub. Make
+small fast breeders cheap and prolific, large slow ones costly and single-young —
+runaway breeders overcrowd and score badly on stability.
+
 ## Refining an existing system (lineage mutation)
 
 You don't have to add something new — you can **rework a live plugin**. Set

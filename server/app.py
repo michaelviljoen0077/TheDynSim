@@ -149,6 +149,96 @@ def create_app(seed: int = 424242) -> FastAPI:
         orch = getattr(app.state, "orchestrator", None)
         return orch.notebook.candidates_for(cycle_id) if orch else []
 
+    # -- observatory: metrics, lab & inspection (Epic 4) ----------------------
+
+    @app.get("/api/metrics")
+    def get_metrics() -> dict:
+        """Live ecosystem snapshot for the charts panel (Story 4.1).
+
+        No time-series is stored server-side for the live run; the client polls
+        this and accumulates its own rolling window.
+        """
+        from engine.reporter import build_report
+        with runner.lock:
+            report = build_report(runner.world)
+        deaths: dict[str, int] = {}
+        for by_cause in report["deaths_by_cause"].values():
+            for cause, n in by_cause.items():
+                deaths[cause] = deaths.get(cause, 0) + int(n)
+        return {
+            "tick": report["tick"],
+            "epoch": report["epoch"],
+            "populations": {name: p["total"] for name, p in report["populations"].items()},
+            "shannonDiversity": report["shannon_diversity"],
+            "floraDensity": report["flora"]["mean_density"],
+            "deathsByCause": deaths,
+        }
+
+    @app.get("/api/interventions")
+    def get_interventions() -> list[dict]:
+        orch = getattr(app.state, "orchestrator", None)
+        return orch.notebook.interventions() if orch else []
+
+    @app.get("/api/lab/plugins")
+    def lab_plugins() -> list[dict]:
+        """Every plugin the run has seen — live/quarantined + all candidates (Story 4.3)."""
+        out: list[dict] = []
+        with runner.lock:
+            for name in runner.host.order:
+                r = runner.host.plugins[name]
+                out.append({
+                    "key": f"live:{name}",
+                    "name": name,
+                    "source": r.source,
+                    "fate": r.status,  # live | quarantined
+                    "species": r.meta.get("species", []),
+                    "lineageParent": r.meta.get("lineage_parent"),
+                    "origin": "live",
+                    "fitness": None,
+                    "candidateId": None,
+                })
+        orch = getattr(app.state, "orchestrator", None)
+        if orch is not None:
+            for c in orch.notebook.all_candidates():
+                meta = c["meta"]
+                out.append({
+                    "key": f"cand:{c['id']}",
+                    "name": meta.get("name") or c["label"],
+                    "source": c["source"],
+                    "fate": c["fate"],
+                    "species": meta.get("species", []),
+                    "lineageParent": meta.get("lineage_parent"),
+                    "origin": "candidate",
+                    "fitness": c["fitness"],
+                    "candidateId": c["id"],
+                })
+        return out
+
+    @app.get("/api/entity/{eid}")
+    def get_entity(eid: int) -> dict:
+        """Inspector detail for one entity (Story 4.4). eid = (index << 16) | generation."""
+        index = eid >> 16
+        generation = eid & 0xFFFF
+        with runner.lock:
+            store = runner.world.store
+            if index >= store.alive.size or not bool(store.alive[index]) \
+                    or int(store.generation[index]) != generation:
+                return {"error": "not found or stale"}
+            sid = int(store.species_id[index])
+            species = next((s for s in runner.world.registry.by_id if s.id == sid), None)
+            return {
+                "id": eid,
+                "species": species.name if species else f"#{sid}",
+                "speciesId": sid,
+                "plugin": species.plugin if species else "",
+                "energy": round(float(store.energy[index]), 2),
+                "age": int(store.age[index]),
+                "x": round(float(store.px[index]), 2),
+                "y": round(float(store.py[index]), 2),
+                "z": round(float(store.pz[index]), 2),
+                "stratum": int(store.stratum[index]),
+            }
+
     # -- WebSocket stream ----------------------------------------------------
 
     @app.websocket("/ws")

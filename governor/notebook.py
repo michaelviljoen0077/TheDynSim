@@ -196,3 +196,34 @@ class Notebook:
                 d[k] = json.loads(d[k] or "{}")
             out.append(d)
         return out
+
+    def all_candidates(self) -> list[dict]:
+        """Every candidate this run ever produced — the code lab's plugin browser."""
+        rows = self.db.execute(
+            """SELECT c.* FROM candidates c
+               JOIN cycles cy ON cy.id = c.cycle_id
+               WHERE cy.run_id = ? ORDER BY c.rowid""",
+            (self.run_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            for k in ("meta", "validation", "shadow_metrics", "fitness_breakdown"):
+                d[k] = json.loads(d[k] or "{}")
+            out.append(d)
+        return out
+
+    def interventions(self, limit: int = 200) -> list[dict]:
+        """Promotion / rollback / control-failure events — timeline chart markers."""
+        rows = self.db.execute(
+            """SELECT epoch, tick, kind, plugin_name, details, created_at
+               FROM interventions WHERE run_id = ?
+               ORDER BY created_at LIMIT ?""",
+            (self.run_id, limit),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["details"] = json.loads(d["details"] or "{}")
+            out.append(d)
+        return out

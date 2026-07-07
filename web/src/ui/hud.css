@@ -1,0 +1,228 @@
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+  color: #c7d3e0;
+  user-select: none;
+}
+
+.panel {
+  position: absolute;
+  pointer-events: auto;
+  background: rgba(8, 12, 20, 0.78);
+  border: 1px solid rgba(75, 225, 255, 0.22);
+  border-radius: 4px;
+  padding: 10px 12px;
+  backdrop-filter: blur(4px);
+  min-width: 190px;
+}
+
+.panel-status {
+  top: 14px;
+  left: 14px;
+}
+.panel-clock {
+  top: 14px;
+  right: 14px;
+  text-align: right;
+}
+.panel-species {
+  bottom: 14px;
+  right: 14px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.panel-controls {
+  bottom: 14px;
+  left: 14px;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  color: #4be1ff;
+  margin-bottom: 8px;
+}
+
+.conn {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.conn-connected {
+  background: #3ddc84;
+  box-shadow: 0 0 6px #3ddc84;
+}
+.conn-connecting,
+.conn-reconnecting {
+  background: #ffb454;
+  box-shadow: 0 0 6px #ffb454;
+  animation: pulse 1s infinite;
+}
+.conn-label {
+  margin-left: auto;
+  color: #6b7a8c;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+}
+.k {
+  color: #6b7a8c;
+}
+.v {
+  color: #e8f1fa;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.glyph {
+  color: #ffb454;
+  font-size: 15px;
+}
+.clock-time {
+  color: #e8f1fa;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.season {
+  color: #4be1ff;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+}
+
+.species-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  padding: 3px 2px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.species-row:hover {
+  background: rgba(75, 225, 255, 0.08);
+}
+.species-hidden {
+  opacity: 0.35;
+}
+.species-hidden .species-name {
+  text-decoration: line-through;
+}
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  flex: 0 0 auto;
+}
+.species-name {
+  flex: 1;
+  text-align: left;
+}
+.species-count {
+  color: #ffb454;
+  font-variant-numeric: tabular-nums;
+}
+.empty {
+  color: #6b7a8c;
+  font-style: italic;
+}
+
+.button-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.button-row button {
+  flex: 1;
+  background: rgba(75, 225, 255, 0.08);
+  border: 1px solid rgba(75, 225, 255, 0.35);
+  color: #4be1ff;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 5px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.button-row button:hover {
+  background: rgba(75, 225, 255, 0.2);
+}
+.button-row button.danger {
+  border-color: rgba(255, 100, 90, 0.4);
+  color: #ff8a7a;
+  background: rgba(255, 100, 90, 0.06);
+}
+.button-row button.danger:hover {
+  background: rgba(255, 100, 90, 0.18);
+}
+
+.speed-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.speed-row input[type='range'] {
+  flex: 1;
+  accent-color: #4be1ff;
+}
+.speed-row .v {
+  min-width: 58px;
+}
+
+.strata-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid rgba(75, 225, 255, 0.15);
+  padding-top: 8px;
+}
+.stratum-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.stratum-toggle input {
+  accent-color: #ffb454;
+  margin: 0;
+}
+
+.world-waiting {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4be1ff;
+  font-family: Consolas, monospace;
+  letter-spacing: 0.2em;
+  animation: pulse 1.4s infinite;
+}

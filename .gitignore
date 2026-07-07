@@ -6,3 +6,5 @@ node_modules/
 *.npz
 genesis_v2.egg-info/
 *.egg-info/
+web/node_modules/
+web/dist/

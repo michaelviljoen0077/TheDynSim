@@ -3,6 +3,7 @@ import { Hud } from './ui/Hud';
 import { EvolutionPanel } from './ui/EvolutionPanel';
 import { MetricsPanel } from './ui/MetricsPanel';
 import { InspectorPanel } from './ui/InspectorPanel';
+import { CodeLab } from './ui/CodeLab';
 
 export function App() {
   return (
@@ -12,6 +13,7 @@ export function App() {
       <EvolutionPanel />
       <MetricsPanel />
       <InspectorPanel />
+      <CodeLab />
     </div>
   );
 }

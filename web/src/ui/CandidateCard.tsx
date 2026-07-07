@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useStore } from '../state/store';
 import type { Candidate, CandidateFate } from './EvolutionPanel';
 
 // Map a candidate fate to a badge colour class defined in evolution.css.
@@ -58,6 +59,7 @@ interface CandidateCardProps {
 export function CandidateCard({ candidate }: CandidateCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [showSource, setShowSource] = useState(false);
+  const openLab = useStore((s) => s.openLab);
 
   const meta = candidate.meta ?? {};
   const hypothesis = meta.hypothesis ?? '';
@@ -138,6 +140,14 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
               {showSource && <pre className="evo-source">{source}</pre>}
             </>
           )}
+
+          <button
+            className="evo-btn evo-source-toggle"
+            onClick={() => openLab(`cand:${candidate.id}`)}
+            title="Open this candidate in the code lab"
+          >
+            open in code lab →
+          </button>
         </div>
       )}
     </div>

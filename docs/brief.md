@@ -21,7 +21,7 @@ The product is both a mesmerizing thing to watch (a 3D world visibly growing mor
 
 ### The idea is proven; the v1 implementation collapses under it
 
-The v1 prototype (this repo) demonstrated the core magic — an LLM observing a live ecosystem and hot-loading new Python behaviour into it — but every structural weakness eventually surfaced as mass extinction, crashed plugins, or a stagnant world:
+The v1 prototype (old repo) demonstrated the core magic — an LLM observing a live ecosystem and hot-loading new Python behaviour into it — but every structural weakness eventually surfaced as mass extinction, crashed plugins, or a stagnant world:
 
 1. **No validation loop.** Generated code went LLM → disk → `exec()` in-process on the live world. The only quality gates were a syntax check and "quarantine after 3 runtime errors." A plugin's *ecological* quality (do the animals survive?) was never tested before deployment — the live world **was** the test environment.
 2. **Prompt-as-bugfix-graveyard.** Every failure mode was patched by adding rules to a giant prompt ("HARD RULES 1–10", "CRITICAL — WHY ANIMALS KEEP DYING"). This is fighting symptoms; the ecosystem kept collapsing anyway because nothing ever *measured* whether a generated plugin worked before it shipped.

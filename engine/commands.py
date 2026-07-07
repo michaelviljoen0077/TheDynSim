@@ -64,7 +64,9 @@ class CommandBuffer:
     def apply(self, store: EntityStore, world_max: float,
               predation_marks: set[int] | None = None,
               flora: np.ndarray | None = None,
-              speeds: np.ndarray | None = None) -> None:
+              speeds: np.ndarray | None = None,
+              water: np.ndarray | None = None,
+              swim_speeds: np.ndarray | None = None) -> None:
         """Apply ops in submission order (deterministic). Clamp positions to world bounds.
 
         Positions clamp to [0, world_max - 1]: the terrain's last vertex is at
@@ -129,11 +131,18 @@ class CommandBuffer:
             rows = np.fromiter(moved.keys(), dtype=np.int64, count=len(moved))
             vals = np.array(list(moved.values()), dtype=np.float32)
             if speeds is not None:
-                # clamp net horizontal displacement to the species' speed
+                # clamp net horizontal displacement to the species' speed;
+                # a swimmer currently on water moves at its swim speed instead
                 dx = vals[:, 0] - xs[rows]
                 dy = vals[:, 1] - ys[rows]
                 dist = np.sqrt(dx * dx + dy * dy)
                 limit = speeds[store.species_id[rows]]
+                if water is not None and swim_speeds is not None:
+                    ix = xs[rows].astype(np.int32)
+                    iy = ys[rows].astype(np.int32)
+                    on_water = water[ix, iy] > 0.5
+                    sw = swim_speeds[store.species_id[rows]]
+                    limit = np.where(on_water & (sw > 0.0), sw, limit)
                 over = dist > limit
                 if np.any(over):
                     scale = np.where(over, limit / np.maximum(dist, 1e-9), 1.0)

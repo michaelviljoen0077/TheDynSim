@@ -208,6 +208,7 @@ class PluginHost:
                 "errors": r.error_count,
                 "lastError": r.last_error,
                 "tickMsEma": round(r.tick_time_ema * 1000, 3),
+                "spawnDrops": r.api.spawn_drops,
             }
             for name in self.order
             for r in (self.plugins[name],)

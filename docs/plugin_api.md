@@ -55,19 +55,26 @@ def on_tick(world):
   starving entities yourself.
 - **Handles are generational.** A handle to a dead entity raises a `stale-handle`
   error if used; catch nothing — just re-query each tick.
-- **Quotas** (machine-readable errors): max entities per plugin, max spawns per
-  tick, max `world.store` keys. Exceeding one raises; the tick's remaining work
-  is skipped and the error is recorded. Repeated errors quarantine the plugin.
+- **Population quotas are soft.** Spawns beyond the per-tick or per-plugin caps
+  are silently dropped and counted (`spawnDrops` in plugin status) — a booming
+  population is an environmental limit, never an error. Capability violations
+  (touching another plugin's species, unknown props) DO raise, and repeated
+  errors quarantine the plugin.
+- **Water:** SURFACE entities on open water drown (engine drains 0.8 energy/tick,
+  death cause `drowning`) unless their species declared `swim_speed > 0` — and
+  swimmers move at `swim_speed` (not land speed) while on water.
 
 ## WorldAPI
 
 ### Species & lifecycle
-- `world.register_species(name, size=1.0, color="#rrggbb", speed=2.5, strata=(world.SURFACE,), props=("hunger",))`
+- `world.register_species(name, size=1.0, color="#rrggbb", speed=2.5, swim_speed=0.0, strata=(world.SURFACE,), props=("hunger",))`
   — only in `setup`, only names declared in `PLUGIN_META["species"]`. `props` are
   per-entity float slots (max 8). **`speed` is the engine-enforced maximum distance
   per tick** (clamped to 0.1–8.0): whatever you pass to `move()`, an entity's net
-  displacement per tick never exceeds its species speed. Faster species should cost
-  more energy per tick — that's your design responsibility, and the fitness
+  displacement per tick never exceeds its species speed. **`swim_speed`** (0–8) makes
+  the species aquatic-capable: on water it moves at `swim_speed` instead of `speed`,
+  and it never drowns; `swim_speed=0` means water is lethal. Faster species should
+  cost more energy per tick — that's your design responsibility, and the fitness
   function punishes free lunches.
 - `world.spawn(species, x, y, stratum=world.SURFACE, energy=100.0, z=0.0)` — owned species only.
 - `world.remove(handle)` — owned species only.

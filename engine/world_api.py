@@ -64,6 +64,7 @@ class WorldAPI:
         self._adoptable = set(adoptable_species or ())
         self._spawns_this_tick = 0
         self._owned_alive = 0
+        self.spawn_drops = 0  # spawns dropped by quota (an environmental limit, not an error)
         self.size = float(world.config.size)  # world edge length (positions span 0..size-1)
         self.rng = world.plugin_rng(plugin_name)
         self.store = PluginStore(
@@ -111,7 +112,8 @@ class WorldAPI:
     # -- species & lifecycle ---------------------------------------------------
 
     def register_species(self, name: str, size: float = 1.0, color: str = "#cccccc",
-                         speed: float = 2.5, strata: tuple[int, ...] = (SURFACE,),
+                         speed: float = 2.5, swim_speed: float = 0.0,
+                         strata: tuple[int, ...] = (SURFACE,),
                          props: tuple[str, ...] = ()) -> None:
         if name not in self._declared:
             raise CapabilityViolation(
@@ -122,8 +124,8 @@ class WorldAPI:
             if name in self._adoptable:
                 # lineage replacement: restyle/re-tune the species, keep its prop
                 # layout (live entities carry data in those slots)
-                self._world.registry.adopt(name, self._plugin_name,
-                                           size=size, color=color, speed=speed)
+                self._world.registry.adopt(name, self._plugin_name, size=size,
+                                           color=color, speed=speed, swim_speed=swim_speed)
                 return
             raise CapabilityViolation(
                 "duplicate-species",
@@ -132,18 +134,22 @@ class WorldAPI:
             )
         self._world.registry.register(
             name, plugin=self._plugin_name, size=size, color=color, speed=speed,
-            strata=tuple(strata), props=tuple(props),
+            swim_speed=swim_speed, strata=tuple(strata), props=tuple(props),
         )
 
     def spawn(self, species: str, x: float, y: float, stratum: int = SURFACE,
               energy: float = 100.0, z: float = 0.0) -> None:
+        """Spawn an owned entity. Hitting a population/spawn-rate cap is an
+        ENVIRONMENTAL limit, not a programming error: the spawn is silently
+        dropped and counted in `spawn_drops` — it must never abort the tick or
+        push a healthy plugin toward quarantine (a booming herd is not a bug)."""
         sp = self._owned(species)
         cfg = self._world.config
         self._spawns_this_tick += 1
-        if self._spawns_this_tick > cfg.max_spawns_per_tick:
-            raise QuotaViolation("spawn-quota", f"more than {cfg.max_spawns_per_tick} spawns in one tick")
-        if self._owned_alive + self._spawns_this_tick > cfg.max_entities_per_plugin:
-            raise QuotaViolation("entity-quota", f"plugin entity cap is {cfg.max_entities_per_plugin}")
+        if (self._spawns_this_tick > cfg.max_spawns_per_tick
+                or self._owned_alive + self._spawns_this_tick > cfg.max_entities_per_plugin):
+            self.spawn_drops += 1
+            return
         self._world.commands.spawn(sp.id, float(x), float(y), float(z), int(stratum),
                                    float(energy), self._plugin_id)
 

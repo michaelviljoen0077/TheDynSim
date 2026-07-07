@@ -96,3 +96,31 @@ def test_positions_stay_on_rendered_terrain():
     i = handle_index(h)
     assert float(w.store.px[i]) <= 63.0
     assert float(w.store.py[i]) <= 63.0
+
+
+def test_swimmers_swim_and_nonswimmers_drown():
+    w = World(WorldConfig(seed=12, size=64, initial_capacity=256))
+    fish = w.registry.register("fish", speed=3.0, swim_speed=1.2)
+    goat = w.registry.register("goat", speed=3.0)  # swim_speed 0: water is lethal
+    # find a water cell
+    import numpy as np
+    wy, wx = 0, 0
+    water_cells = np.argwhere(w.terrain.water_mask > 0.5)
+    assert len(water_cells) > 0
+    wx, wy = float(water_cells[0][0]), float(water_cells[0][1])
+
+    hf = w.store.spawn(fish.id, wx, wy, 0.0, SURFACE, 100.0)
+    hg = w.store.spawn(goat.id, wx, wy, 0.0, SURFACE, 3.0)
+
+    # fish on water: moves, but clamped to swim speed
+    w.commands.move(hf, 3.0, 0.0)
+    w.step()
+    fi = handle_index(hf)
+    assert abs(float(w.store.px[fi]) - wx) <= 1.2 + 1e-5
+    assert w.store.energy[fi] == 100.0  # swimmers never drown
+
+    # goat on water: drains 0.8/tick and dies with cause 'drowning'
+    for _ in range(5):
+        w.step()
+    assert not w.store.is_valid(hg)
+    assert w.deaths.get("goat", {}).get("drowning", 0) == 1

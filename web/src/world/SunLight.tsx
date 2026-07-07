@@ -3,14 +3,14 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../state/store';
 
-const NIGHT_SKY = new THREE.Color('#0a1226');
+const NIGHT_SKY = new THREE.Color('#16203c');
 const MOON = new THREE.Color('#9fb4de');
 const DAWN_SKY = new THREE.Color('#c97b3f');
 const DAY_SKY = new THREE.Color('#8fc3e8');
 const OVERCAST = new THREE.Color('#5a6470');
 const SUN_LOW = new THREE.Color('#ff9440');
 const SUN_HIGH = new THREE.Color('#fff5e0');
-const AMB_NIGHT = new THREE.Color('#4d5f92');
+const AMB_NIGHT = new THREE.Color('#7285b8');
 const AMB_DAY = new THREE.Color('#cfe0f5');
 const tmpSky = new THREE.Color();
 
@@ -59,8 +59,9 @@ export function SunLight() {
     sun.visible = elev > -0.06;
 
     amb.color.copy(AMB_NIGHT).lerp(AMB_DAY, daylight);
-    // night floor kept generous: the world must stay watchable at midnight
-    amb.intensity = 0.5 + 0.4 * daylight;
+    // night floor kept generous: the world must stay watchable at midnight —
+    // this reads as "bright moonlit night", not darkness
+    amb.intensity = 0.75 + 0.25 * daylight;
 
     // moon: cool fill from opposite the sun, fading out as daylight rises
     const moon = moonRef.current;
@@ -69,7 +70,7 @@ export function SunLight() {
       moon.target.position.set(c, 0, c);
       moon.target.updateMatrixWorld();
       moon.color.copy(MOON);
-      moon.intensity = 0.55 * (1 - daylight) * (1 - 0.3 * precip);
+      moon.intensity = 1.0 * (1 - daylight) * (1 - 0.3 * precip);
       moon.visible = daylight < 0.85;
     }
 

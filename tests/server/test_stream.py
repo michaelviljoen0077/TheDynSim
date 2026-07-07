@@ -68,7 +68,7 @@ def test_ws_sync_terrain_and_entity_frames(client):
 
         entities = read_binary(ws)
         kind, tick, epoch, n = struct.unpack_from("<4I", entities, 0)
-        assert kind == 2 and n >= 300  # grazers + wolves + birds
+        assert kind == 2 and n >= 150  # grazers + wolves + birds (halved initial populations)
         assert len(entities) == 16 + n * (4 + 4 * 4 + 2 + 1)
         off = 16 + n * 4
         xs = np.frombuffer(entities, dtype="<f4", count=n, offset=off)

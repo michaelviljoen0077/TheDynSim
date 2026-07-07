@@ -13,7 +13,7 @@ def setup(world):
         "wolf", size=2.2, color="#8a4a4a", speed=1.7,
         strata=(world.SURFACE,), props=(),
     )
-    for _ in range(10):
+    for _ in range(5):
         x, y = world.random_surface_point()
         world.spawn("wolf", x, y, stratum=world.SURFACE, energy=140.0)
 

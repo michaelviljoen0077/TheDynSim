@@ -16,7 +16,7 @@ def setup(world):
         strata=(world.SKY,), props=("phase",),
     )
     world.store.set("heading", 0.0)
-    for _ in range(200):
+    for _ in range(100):
         x, y = world.random_surface_point()
         world.spawn("bird", x, y, stratum=world.SKY, energy=100.0,
                     z=2.0 + 4.0 * world.rng.random())

@@ -106,7 +106,10 @@ class OllamaProvider:
                 "messages": [{"role": "user", "content": prompt}],
                 "format": PROPOSAL_SCHEMA,
                 "stream": False,
-                "options": {"temperature": 0.7, "num_predict": 4096},
+                # num_ctx set explicitly: the governor prompt (API doc + report +
+                # recall + live sources) can exceed Ollama's default window, which
+                # would truncate SILENTLY and lobotomize generation
+                "options": {"temperature": 0.7, "num_predict": 4096, "num_ctx": 16384},
                 "keep_alive": self.keep_alive,
             }
             req = urllib.request.Request(

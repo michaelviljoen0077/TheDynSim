@@ -32,7 +32,8 @@ class Species:
     plugin: str          # owning plugin name ("" = engine-owned)
     size: float = 1.0
     color: str = "#cccccc"
-    speed: float = 2.5   # engine-enforced max distance per tick (see CommandBuffer.apply)
+    speed: float = 2.5      # engine-enforced max distance per tick (see CommandBuffer.apply)
+    swim_speed: float = 0.0  # max speed while on water; 0 = cannot swim (drowns on SURFACE water)
     strata: tuple[int, ...] = (SURFACE,)
     prop_slots: dict[str, int] = field(default_factory=dict)  # prop name -> slot
 
@@ -50,6 +51,7 @@ class SpeciesRegistry:
         size: float = 1.0,
         color: str = "#cccccc",
         speed: float = 2.5,
+        swim_speed: float = 0.0,
         strata: tuple[int, ...] = (SURFACE,),
         props: tuple[str, ...] = (),
     ) -> Species:
@@ -64,6 +66,7 @@ class SpeciesRegistry:
             size=size,
             color=color,
             speed=max(0.1, min(float(speed), 8.0)),
+            swim_speed=max(0.0, min(float(swim_speed), 8.0)),
             strata=tuple(strata),
             prop_slots={p: i for i, p in enumerate(props)},
         )
@@ -72,7 +75,8 @@ class SpeciesRegistry:
         return sp
 
     def adopt(self, name: str, new_plugin: str, size: float | None = None,
-              color: str | None = None, speed: float | None = None) -> Species:
+              color: str | None = None, speed: float | None = None,
+              swim_speed: float | None = None) -> Species:
         """Transfer species ownership to a replacement plugin (lineage mutation).
 
         Prop slots are preserved — live entities carry data in them; a mutation
@@ -86,18 +90,24 @@ class SpeciesRegistry:
             sp.color = color
         if speed is not None:
             sp.speed = max(0.1, min(float(speed), 8.0))
+        if swim_speed is not None:
+            sp.swim_speed = max(0.0, min(float(swim_speed), 8.0))
         return sp
 
     def speeds_array(self) -> np.ndarray:
         """Per-species max speed, indexed by species id (for CommandBuffer.apply)."""
         return np.array([s.speed for s in self.by_id] or [2.5], dtype=np.float32)
 
+    def swim_speeds_array(self) -> np.ndarray:
+        """Per-species max swim speed (0 = drowns), indexed by species id."""
+        return np.array([s.swim_speed for s in self.by_id] or [0.0], dtype=np.float32)
+
     def to_state(self) -> list[dict]:
         return [
             {
                 "id": s.id, "name": s.name, "plugin": s.plugin, "size": s.size,
-                "color": s.color, "speed": s.speed, "strata": list(s.strata),
-                "prop_slots": s.prop_slots,
+                "color": s.color, "speed": s.speed, "swim_speed": s.swim_speed,
+                "strata": list(s.strata), "prop_slots": s.prop_slots,
             }
             for s in self.by_id
         ]
@@ -108,7 +118,8 @@ class SpeciesRegistry:
         for d in state:
             sp = Species(
                 id=d["id"], name=d["name"], plugin=d["plugin"], size=d["size"],
-                color=d["color"], speed=d.get("speed", 2.5), strata=tuple(d["strata"]),
+                color=d["color"], speed=d.get("speed", 2.5),
+                swim_speed=d.get("swim_speed", 0.0), strata=tuple(d["strata"]),
                 prop_slots=dict(d["prop_slots"]),
             )
             reg.by_name[sp.name] = sp

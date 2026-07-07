@@ -43,7 +43,8 @@ class World:
         # live plugin set (name/source/meta/status) maintained by PluginHost; snapshot-included
         # so rollback restores world + plugin set through one mechanism
         self.plugin_manifest: list[dict] = []
-        self._predation_marks: set[int] = set()  # transient within a tick
+        self._predation_marks: set[int] = set()   # transient within a tick
+        self._drowning_marks: set[int] = set()    # transient within a tick
         if _generate:
             self.terrain = Terrain.generate(
                 self.rng, config.size, config.terrain_octaves, config.sea_level_quantile
@@ -83,7 +84,10 @@ class World:
         for hook in self.tick_hooks:  # PluginHost.on_tick attaches here (Epic 2)
             hook(self)
         self.commands.apply(self.store, float(self.config.size), self._predation_marks,
-                            flora=self.flora.density, speeds=self.registry.speeds_array())
+                            flora=self.flora.density, speeds=self.registry.speeds_array(),
+                            water=self.terrain.water_mask,
+                            swim_speeds=self.registry.swim_speeds_array())
+        self._water_effects()
         self._death_sweep()
         alive = self.store.alive
         self.store.age[alive] += 1
@@ -96,17 +100,40 @@ class World:
         by_cause = self.deaths.setdefault(species_name, {})
         by_cause[cause] = by_cause.get(cause, 0) + 1
 
+    def _water_effects(self) -> None:
+        """Surface entities on open water: swimmers are fine, non-swimmers drown."""
+        store = self.store
+        rows = np.flatnonzero(store.alive & (store.stratum == SURFACE))
+        if rows.size == 0:
+            return
+        ix = store.px[rows].astype(np.int32)
+        iy = store.py[rows].astype(np.int32)
+        on_water = self.terrain.water_mask[ix, iy] > 0.5
+        if not np.any(on_water):
+            return
+        wet = rows[on_water]
+        swim = self.registry.swim_speeds_array()[store.species_id[wet]]
+        drowning = wet[swim <= 0.0]
+        store.energy[drowning] -= 0.8
+        self._drowning_marks.update(drowning.tolist())
+
     def _death_sweep(self) -> None:
         """Engine-mediated death: any entity at energy <= 0 dies, with cause attribution."""
         store = self.store
         dead = np.flatnonzero(store.alive & (store.energy <= 0.0))
         for row in dead.tolist():
             species = self.registry.by_id[int(store.species_id[row])].name
-            cause = "predation" if row in self._predation_marks else "starvation"
+            if row in self._predation_marks:
+                cause = "predation"
+            elif row in self._drowning_marks:
+                cause = "drowning"
+            else:
+                cause = "starvation"
             handle = (row << 16) | int(store.generation[row])
             store.remove(handle)
             self.record_death(species, cause)
         self._predation_marks.clear()
+        self._drowning_marks.clear()
 
     def run(self, ticks: int) -> None:
         for _ in range(ticks):

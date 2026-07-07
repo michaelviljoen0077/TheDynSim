@@ -34,7 +34,7 @@ def test_food_chain_runs(caplog):
     host = host_with_examples(world)
     grazers0 = world.store.alive_indices(world.registry.by_name["grazer"].id).size
     wolves0 = world.store.alive_indices(world.registry.by_name["wolf"].id).size
-    assert grazers0 == 120 and wolves0 == 10
+    assert grazers0 == 60 and wolves0 == 5
     world.run(600)
     grazers = world.store.alive_indices(world.registry.by_name["grazer"].id).size
     wolves = world.store.alive_indices(world.registry.by_name["wolf"].id).size
@@ -67,7 +67,10 @@ def on_tick(world):
     assert world.store.alive_indices(world.registry.by_name["grazer"].id).size > 0
 
 
-def test_quota_violation_on_spawn_bomb():
+def test_spawn_bomb_is_soft_capped_not_quarantined():
+    """Population caps are environmental limits: drops are counted, the plugin
+    stays healthy, the world respects the cap. (A booming herd hitting quota
+    used to error 5x and get quarantined -> frozen herd -> collapse.)"""
     world = make_world()
     host = PluginHost(world)
     bomb = '''
@@ -81,10 +84,12 @@ def on_tick(world):
         world.spawn("boom", 1.0, 1.0)
 '''
     record = host.install(bomb)
-    world.step()
-    assert record.error_count == 1
-    assert "spawn-quota" in record.last_error
-    assert world.store.count <= world.config.max_spawns_per_tick
+    for _ in range(6):  # would cross the quarantine threshold under the old semantics
+        world.step()
+    assert record.status == "live"
+    assert record.error_count == 0
+    assert record.api.spawn_drops > 0
+    assert world.store.count <= world.config.max_entities_per_plugin
 
 
 def test_snapshot_rebind_preserves_behavior(tmp_path):

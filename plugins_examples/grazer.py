@@ -13,20 +13,21 @@ def setup(world):
         "grazer", size=1.6, color="#c9a35c", speed=1.8,
         strata=(world.SURFACE,), props=("maturity",),
     )
-    for _ in range(120):
+    for _ in range(60):
         x, y = world.random_surface_point()
         world.spawn("grazer", x, y, stratum=world.SURFACE,
                     energy=80.0 + 50.0 * world.rng.random())
 
 
 def on_tick(world):
+    population = world.count("grazer")
     for grazer in world.entities("grazer"):
         energy = world.get(grazer, "energy") - 0.06
         x, y, _z = world.pos(grazer)
 
-        # in water: drowning drains fast; scramble uphill toward the shore
+        # in water the engine drains us (we can't swim): scramble uphill to shore
         if world.water_at(x, y):
-            world.set(grazer, "energy", energy - 1.5)
+            world.set(grazer, "energy", energy)
             best_dx, best_dy, best_h = 0.0, 0.0, world.height_at(x, y)
             for ddx, ddy in ((3.0, 0.0), (-3.0, 0.0), (0.0, 3.0), (0.0, -3.0)):
                 h = world.height_at(x + ddx, y + ddy)
@@ -63,7 +64,8 @@ def on_tick(world):
         world.move(grazer, world.rng.uniform(-1, 1) * speed,
                    world.rng.uniform(-1, 1) * speed)
 
-        if energy > 150.0:
+        if energy > 150.0 and population < 3000:
+            population += 1
             world.set(grazer, "energy", energy * 0.5)
             world.spawn("grazer", x + world.rng.uniform(-2, 2),
                         y + world.rng.uniform(-2, 2),

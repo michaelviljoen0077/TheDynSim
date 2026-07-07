@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -56,26 +57,32 @@ class Notebook:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.executescript(SCHEMA)
+        # One sqlite3.Connection is shared by the governor's cycle thread (writes)
+        # and FastAPI's threadpool (reads); serialize every access through this.
+        self._lock = threading.Lock()
         self.run_id: str | None = None
 
     def close(self) -> None:
-        self.db.close()
+        with self._lock:
+            self.db.close()
 
     # -- run lifecycle -----------------------------------------------------------
 
     def start_run(self, seed: int, config_json: str, notes: str = "") -> str:
         self.run_id = uuid.uuid4().hex[:12]
-        self.db.execute(
-            "INSERT INTO runs VALUES (?,?,?,?,NULL,?)",
-            (self.run_id, seed, config_json, time.time(), notes),
-        )
-        self.db.commit()
+        with self._lock:
+            self.db.execute(
+                "INSERT INTO runs VALUES (?,?,?,?,NULL,?)",
+                (self.run_id, seed, config_json, time.time(), notes),
+            )
+            self.db.commit()
         return self.run_id
 
     def resume_latest_run(self) -> str | None:
-        row = self.db.execute(
-            "SELECT id FROM runs WHERE ended_at IS NULL ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()
+        with self._lock:
+            row = self.db.execute(
+                "SELECT id FROM runs WHERE ended_at IS NULL ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
         self.run_id = row["id"] if row else None
         return self.run_id
 
@@ -83,74 +90,86 @@ class Notebook:
 
     def record_intervention(self, epoch: int, tick: int, kind: str,
                             plugin_name: str = "", details: dict | None = None) -> None:
-        self.db.execute(
-            "INSERT INTO interventions VALUES (?,?,?,?,?,?,?)",
-            (self.run_id, epoch, tick, kind, plugin_name,
-             json.dumps(details or {}), time.time()),
-        )
-        self.db.commit()
+        with self._lock:
+            self.db.execute(
+                "INSERT INTO interventions VALUES (?,?,?,?,?,?,?)",
+                (self.run_id, epoch, tick, kind, plugin_name,
+                 json.dumps(details or {}), time.time()),
+            )
+            self.db.commit()
 
     def start_cycle(self, epoch: int, tick: int, report: dict, provider: str) -> str:
         cycle_id = uuid.uuid4().hex[:12]
-        self.db.execute(
-            "INSERT INTO cycles VALUES (?,?,?,?,?,?,?,0,0,?,NULL)",
-            (cycle_id, self.run_id, epoch, tick, json.dumps(report),
-             "in_progress", provider, time.time()),
-        )
-        self.db.commit()
+        with self._lock:
+            self.db.execute(
+                "INSERT INTO cycles VALUES (?,?,?,?,?,?,?,0,0,?,NULL)",
+                (cycle_id, self.run_id, epoch, tick, json.dumps(report),
+                 "in_progress", provider, time.time()),
+            )
+            self.db.commit()
         return cycle_id
 
     def finish_cycle(self, cycle_id: str, decision: str,
                      tokens_in: int = 0, tokens_out: int = 0) -> None:
-        self.db.execute(
-            "UPDATE cycles SET decision=?, tokens_in=?, tokens_out=?, finished_at=? WHERE id=?",
-            (decision, tokens_in, tokens_out, time.time(), cycle_id),
-        )
-        self.db.commit()
+        with self._lock:
+            self.db.execute(
+                "UPDATE cycles SET decision=?, tokens_in=?, tokens_out=?, finished_at=? WHERE id=?",
+                (decision, tokens_in, tokens_out, time.time(), cycle_id),
+            )
+            self.db.commit()
 
     def record_candidate(self, cycle_id: str, label: str, source: str, meta: dict,
                          validation: dict, shadow_metrics: dict,
                          fitness_breakdown: dict, fitness: float, fate: str) -> str:
         cand_id = uuid.uuid4().hex[:12]
-        self.db.execute(
-            "INSERT INTO candidates VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (cand_id, cycle_id, label, source, json.dumps(meta), json.dumps(validation),
-             json.dumps(shadow_metrics), json.dumps(fitness_breakdown), fitness, fate),
-        )
         parent = meta.get("lineage_parent")
-        if parent:
-            self.db.execute("INSERT INTO lineage VALUES (?,?,?)", (parent, cand_id, "mutation"))
-        self.db.commit()
+        with self._lock:
+            self.db.execute(
+                "INSERT INTO candidates VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (cand_id, cycle_id, label, source, json.dumps(meta), json.dumps(validation),
+                 json.dumps(shadow_metrics), json.dumps(fitness_breakdown), fitness, fate),
+            )
+            if parent:
+                self.db.execute("INSERT INTO lineage VALUES (?,?,?)", (parent, cand_id, "mutation"))
+            self.db.commit()
         return cand_id
+
+    def set_candidate_fate(self, cand_id: str, fate: str) -> None:
+        with self._lock:
+            self.db.execute("UPDATE candidates SET fate=? WHERE id=?", (fate, cand_id))
+            self.db.commit()
 
     def record_outcome(self, cycle_id: str, plugin_name: str, expected: str,
                        measured: dict, verdict: str) -> None:
-        self.db.execute(
-            "INSERT OR REPLACE INTO outcomes VALUES (?,?,?,?,?)",
-            (cycle_id, plugin_name, expected, json.dumps(measured), verdict),
-        )
-        self.db.commit()
+        with self._lock:
+            self.db.execute(
+                "INSERT OR REPLACE INTO outcomes VALUES (?,?,?,?,?)",
+                (cycle_id, plugin_name, expected, json.dumps(measured), verdict),
+            )
+            self.db.commit()
 
     def record_metrics(self, epoch: int, tick: int, series_values: dict[str, float]) -> None:
-        self.db.executemany(
-            "INSERT INTO metrics VALUES (?,?,?,?,?)",
-            [(self.run_id, epoch, tick, s, v) for s, v in series_values.items()],
-        )
-        self.db.commit()
+        with self._lock:
+            self.db.executemany(
+                "INSERT INTO metrics VALUES (?,?,?,?,?)",
+                [(self.run_id, epoch, tick, s, v) for s, v in series_values.items()],
+            )
+            self.db.commit()
 
     # -- recall (Story 3.2 AC2: recency + species overlap + outcome tags) -----------
 
     def recall(self, current_species: list[str], limit: int = 6) -> list[dict]:
         """Most relevant prior experiments: recent first, species-overlap boosted."""
-        rows = self.db.execute(
-            """SELECT c.id, c.label, c.meta, c.fitness, c.fate, c.fitness_breakdown,
-                      cy.tick, cy.decision, o.verdict, o.expected, o.measured
-               FROM candidates c
-               JOIN cycles cy ON cy.id = c.cycle_id AND cy.run_id = ?
-               LEFT JOIN outcomes o ON o.cycle_id = c.cycle_id
-               ORDER BY cy.started_at DESC LIMIT 60""",
-            (self.run_id,),
-        ).fetchall()
+        with self._lock:
+            rows = self.db.execute(
+                """SELECT c.id, c.label, c.meta, c.fitness, c.fate, c.fitness_breakdown,
+                          cy.tick, cy.decision, o.verdict, o.expected, o.measured
+                   FROM candidates c
+                   JOIN cycles cy ON cy.id = c.cycle_id AND cy.run_id = ?
+                   LEFT JOIN outcomes o ON o.cycle_id = c.cycle_id
+                   ORDER BY cy.started_at DESC LIMIT 60""",
+                (self.run_id,),
+            ).fetchall()
         current = set(current_species)
         scored = []
         for i, row in enumerate(rows):
@@ -177,18 +196,20 @@ class Notebook:
     # -- reads for the API / UI -------------------------------------------------------
 
     def cycles(self, limit: int = 50) -> list[dict]:
-        rows = self.db.execute(
-            """SELECT id, epoch, tick, decision, provider, tokens_in, tokens_out,
-                      started_at, finished_at FROM cycles
-               WHERE run_id=? ORDER BY started_at DESC LIMIT ?""",
-            (self.run_id, limit),
-        ).fetchall()
+        with self._lock:
+            rows = self.db.execute(
+                """SELECT id, epoch, tick, decision, provider, tokens_in, tokens_out,
+                          started_at, finished_at FROM cycles
+                   WHERE run_id=? ORDER BY started_at DESC LIMIT ?""",
+                (self.run_id, limit),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def candidates_for(self, cycle_id: str) -> list[dict]:
-        rows = self.db.execute(
-            "SELECT * FROM candidates WHERE cycle_id=?", (cycle_id,)
-        ).fetchall()
+        with self._lock:
+            rows = self.db.execute(
+                "SELECT * FROM candidates WHERE cycle_id=?", (cycle_id,)
+            ).fetchall()
         out = []
         for r in rows:
             d = dict(r)
@@ -199,12 +220,13 @@ class Notebook:
 
     def all_candidates(self) -> list[dict]:
         """Every candidate this run ever produced — the code lab's plugin browser."""
-        rows = self.db.execute(
-            """SELECT c.* FROM candidates c
-               JOIN cycles cy ON cy.id = c.cycle_id
-               WHERE cy.run_id = ? ORDER BY c.rowid""",
-            (self.run_id,),
-        ).fetchall()
+        with self._lock:
+            rows = self.db.execute(
+                """SELECT c.* FROM candidates c
+                   JOIN cycles cy ON cy.id = c.cycle_id
+                   WHERE cy.run_id = ? ORDER BY c.rowid""",
+                (self.run_id,),
+            ).fetchall()
         out = []
         for r in rows:
             d = dict(r)
@@ -215,12 +237,13 @@ class Notebook:
 
     def interventions(self, limit: int = 200) -> list[dict]:
         """Promotion / rollback / control-failure events — timeline chart markers."""
-        rows = self.db.execute(
-            """SELECT epoch, tick, kind, plugin_name, details, created_at
-               FROM interventions WHERE run_id = ?
-               ORDER BY created_at LIMIT ?""",
-            (self.run_id, limit),
-        ).fetchall()
+        with self._lock:
+            rows = self.db.execute(
+                """SELECT epoch, tick, kind, plugin_name, details, created_at
+                   FROM interventions WHERE run_id = ?
+                   ORDER BY created_at LIMIT ?""",
+                (self.run_id, limit),
+            ).fetchall()
         out = []
         for r in rows:
             d = dict(r)

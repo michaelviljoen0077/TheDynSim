@@ -20,6 +20,10 @@ BANNED_CALLS = {
     "getattr", "setattr", "delattr", "globals", "locals", "vars", "exit", "quit",
     "breakpoint", "memoryview", "super",
 }
+# Deterministic-replay killers: hash randomization makes hash()/set iteration
+# order vary between processes, and id() exposes non-deterministic addresses.
+# A plugin using these can pass a shadow test yet diverge on snapshot replay.
+NONDETERMINISTIC_CALLS = {"set", "frozenset", "hash", "id"}
 BANNED_NAMES = {"random", "numpy", "np", "os", "sys", "socket", "subprocess"}
 META_REQUIRED = {"name", "contract", "species"}
 
@@ -161,6 +165,11 @@ def _walk_banned_constructs(tree: ast.Module, errors: list[Violation],
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
                 and node.func.id in BANNED_CALLS:
             errors.append(Violation("banned-call", f"call to {node.func.id!r} is not allowed", node.lineno))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                and node.func.id in NONDETERMINISTIC_CALLS:
+            errors.append(Violation("non-deterministic", f"{node.func.id!r} is non-deterministic across runs (hash randomization / object identity) and breaks snapshot replay — use a list or dict for ordered, hashable-free state", node.lineno))
+        elif isinstance(node, (ast.Set, ast.SetComp)):
+            errors.append(Violation("non-deterministic", "set literals/comprehensions iterate in hash order (non-deterministic) — use a list or dict instead", node.lineno))
         elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) \
                 and node.id in BANNED_NAMES:
             errors.append(Violation("banned-name", f"use of {node.id!r} is not allowed (randomness must come from world.rng)", node.lineno))

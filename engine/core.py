@@ -82,7 +82,8 @@ class World:
         self.spatial.rebuild(self.store)
         for hook in self.tick_hooks:  # PluginHost.on_tick attaches here (Epic 2)
             hook(self)
-        self.commands.apply(self.store, float(self.config.size), self._predation_marks)
+        self.commands.apply(self.store, float(self.config.size), self._predation_marks,
+                            flora=self.flora.density)
         self._death_sweep()
         alive = self.store.alive
         self.store.age[alive] += 1

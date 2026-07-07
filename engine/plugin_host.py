@@ -29,7 +29,7 @@ SAFE_BUILTINS = {
     for name in (
         "abs", "all", "any", "bool", "dict", "divmod", "enumerate", "filter", "float",
         "int", "isinstance", "len", "list", "map", "max", "min", "range", "reversed",
-        "round", "set", "sorted", "str", "sum", "tuple", "zip", "ValueError", "TypeError",
+        "round", "sorted", "str", "sum", "tuple", "zip", "ValueError", "TypeError",
         "KeyError", "IndexError", "ZeroDivisionError", "Exception", "StopIteration", "True",
         "False", "None",
     )
@@ -112,7 +112,8 @@ class PluginHost:
                 ) from e
             # setup runs at promotion time, outside a tick: apply its buffered
             # effects now so the plugin's initial population exists atomically
-            self.world.commands.apply(self.world.store, float(self.world.config.size))
+            self.world.commands.apply(self.world.store, float(self.world.config.size),
+                                      flora=self.world.flora.density)
         self.plugins[name] = record
         self.order.append(name)
         self._sync_manifest()

@@ -48,13 +48,18 @@ def _arrays(world: World) -> dict[str, np.ndarray]:
     return arrays
 
 
+def _dump_header(world: World) -> str:
+    """Canonical header serialization shared by save and hash (so they agree byte-for-byte)."""
+    return json.dumps(_header(world), sort_keys=True)
+
+
 def save_snapshot(world: World, path: str | Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix != ".npz":
         path = path.with_suffix(path.suffix + ".npz")
     arrays = _arrays(world)
-    header = np.frombuffer(json.dumps(_header(world), sort_keys=True).encode(), dtype=np.uint8)
+    header = np.frombuffer(_dump_header(world).encode(), dtype=np.uint8)
     np.savez(path, __header__=header, **arrays)  # uncompressed: FR "< 2 s" beats file size
     return path
 
@@ -89,7 +94,7 @@ def load_snapshot(path: str | Path) -> World:
 def state_hash(world: World) -> str:
     """SHA-256 over the full canonical state; equal hash == equal world."""
     h = hashlib.sha256()
-    h.update(json.dumps(_header(world), sort_keys=True, default=str).encode())
+    h.update(_dump_header(world).encode())
     arrays = _arrays(world)
     for name in sorted(arrays):
         h.update(name.encode())

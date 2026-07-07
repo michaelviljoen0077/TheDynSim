@@ -1,10 +1,12 @@
 """WorldAPI: the ONLY object a plugin receives. Capability-scoped facade.
 
-Reads see tick-start state; every mutation goes through the command buffer and
-applies at tick end. Writes are permitted only on species the plugin declared;
-cross-species interaction happens through engine-mediated `attack`. Quota
-violations raise QuotaViolation with a machine-readable payload the repair
-round-trip and notebook consume (FR8).
+Reads see tick-start state; every mutation — entity moves/spawns/energy and
+shared-field consumption via `eat_flora` — goes through the command buffer and
+applies at tick end, so plugin execution order can never leak between plugins.
+Writes are permitted only on species the plugin declared; cross-species
+interaction happens through engine-mediated `attack`. Quota violations raise
+QuotaViolation with a machine-readable payload the repair round-trip and
+notebook consume (FR8).
 """
 
 from __future__ import annotations
@@ -234,13 +236,19 @@ class WorldAPI:
         return float(self._world.flora.density[ix, iy])
 
     def eat_flora(self, x: float, y: float, amount: float) -> float:
-        """Consume flora at (x, y); returns density actually consumed."""
+        """Consume flora at (x, y); returns the bite estimated against tick-start density.
+
+        The drain is command-buffered and applied at tick end (in submission order,
+        clamped), exactly like `attack`: every plugin reads tick-start flora during
+        the tick, execution order can't leak between plugins, and the grass can
+        never be over-consumed.
+        """
         size = self._world.config.size
         ix = min(max(int(x), 0), size - 1)
         iy = min(max(int(y), 0), size - 1)
         avail = float(self._world.flora.density[ix, iy])
         bite = min(avail, max(0.0, float(amount)))
-        self._world.flora.density[ix, iy] = avail - bite
+        self._world.commands.eat_flora(ix, iy, bite)
         return bite
 
     def water_at(self, x: float, y: float) -> bool:

@@ -72,3 +72,16 @@ def test_strata_are_isolated():
     sh.rebuild(store)
     assert len(sh.within(store, 10, 10, 5, SURFACE)) == 1
     assert len(sh.within(store, 10, 10, 5, SKY)) == 1
+
+
+def test_within_order_tracks_species_id_not_row_allocation():
+    """within(species=None) must be species-major by id, not by which species
+    happens to own the lowest alive row (which unrelated plugins can shift)."""
+    store = EntityStore(capacity=16, max_prop_slots=2)
+    store.spawn(1, 10.0, 10.0, 0.0, SURFACE, 1.0)   # species 1 -> row 0
+    store.spawn(0, 10.5, 10.0, 0.0, SURFACE, 1.0)   # species 0 -> row 1
+    sh = SpatialHash(64.0, cell=8.0)
+    sh.rebuild(store)
+    # species 0 (higher row) is returned before species 1 (lower row)
+    assert sh.within(store, 10.0, 10.0, 5.0, SURFACE) == [1, 0]
+

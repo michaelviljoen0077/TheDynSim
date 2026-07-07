@@ -13,6 +13,7 @@ from __future__ import annotations
 import multiprocessing as mp
 import time
 from dataclasses import asdict, dataclass, field
+from queue import Empty
 
 import psutil
 
@@ -130,6 +131,19 @@ def _populations(world) -> dict[str, int]:
     }
 
 
+def _drain(queue: mp.Queue, timeout: float = 0.0) -> dict | None:
+    """Non-blocking (or briefly blocking) read of the worker's single result.
+
+    The queue must be drained *while the worker is alive*: a payload larger than
+    the OS pipe buffer blocks the worker's feeder thread until the parent reads
+    it, so the worker would never exit and would be spuriously wall-budget-killed.
+    """
+    try:
+        return queue.get(timeout=timeout) if timeout > 0 else queue.get_nowait()
+    except Empty:
+        return None
+
+
 def run_shadow_batch(jobs: list[ShadowJob], max_parallel: int = 4) -> list[ShadowResult]:
     """Run jobs in parallel spawn processes, each under its own watchdog."""
     results: dict[str, ShadowResult] = {}
@@ -150,39 +164,49 @@ def run_shadow_batch(jobs: list[ShadowJob], max_parallel: int = 4) -> list[Shado
         for job, proc, queue, t0 in active:
             elapsed = time.perf_counter() - t0
             verdict: ShadowResult | None = None
-            rss_mb = 0.0
-            if proc.is_alive():
-                try:
-                    rss_mb = psutil.Process(proc.pid).memory_info().rss / (1024 * 1024)
-                except psutil.NoSuchProcess:
-                    pass
-            if proc.is_alive() and rss_mb > job.budgets.rss_mb:
-                proc.kill()
-                verdict = ShadowResult(job.label, False,
-                                       f"rss-budget: {rss_mb:.0f} MB > {job.budgets.rss_mb} MB",
-                                       elapsed)
-            elif proc.is_alive() and elapsed > job.budgets.wall_s:
-                proc.kill()
-                verdict = ShadowResult(job.label, False,
-                                       f"wall-budget: {elapsed:.1f} s > {job.budgets.wall_s} s",
-                                       elapsed)
-            elif not proc.is_alive():
-                payload = None
-                try:
-                    payload = queue.get_nowait()
-                except Exception:  # noqa: BLE001 — empty queue == crashed silently
-                    payload = None
-                if payload is None:
+
+            # Read the result first, while the worker is still alive — otherwise a
+            # large metrics payload deadlocks the worker's feeder thread against
+            # the OS pipe buffer and it gets spuriously wall-budget-killed.
+            payload = _drain(queue)
+            if payload is not None:
+                verdict = ShadowResult(payload["label"], payload["ok"], payload["reason"],
+                                       payload.get("wall_s", elapsed),
+                                       payload.get("metrics", {}))
+            else:
+                rss_mb = 0.0
+                if proc.is_alive():
+                    try:
+                        rss_mb = psutil.Process(proc.pid).memory_info().rss / (1024 * 1024)
+                    except psutil.NoSuchProcess:
+                        pass
+                if proc.is_alive() and rss_mb > job.budgets.rss_mb:
+                    proc.kill()
                     verdict = ShadowResult(job.label, False,
-                                           f"worker-died: exit code {proc.exitcode}", elapsed)
-                else:
-                    verdict = ShadowResult(payload["label"], payload["ok"], payload["reason"],
-                                           payload.get("wall_s", elapsed),
-                                           payload.get("metrics", {}))
+                                           f"rss-budget: {rss_mb:.0f} MB > {job.budgets.rss_mb} MB",
+                                           elapsed)
+                elif proc.is_alive() and elapsed > job.budgets.wall_s:
+                    proc.kill()
+                    verdict = ShadowResult(job.label, False,
+                                           f"wall-budget: {elapsed:.1f} s > {job.budgets.wall_s} s",
+                                           elapsed)
+                elif not proc.is_alive():
+                    # Exited without us seeing a result — give any in-flight
+                    # payload a brief chance to arrive before declaring it dead.
+                    payload = _drain(queue, timeout=0.2)
+                    if payload is None:
+                        verdict = ShadowResult(job.label, False,
+                                               f"worker-died: exit code {proc.exitcode}", elapsed)
+                    else:
+                        verdict = ShadowResult(payload["label"], payload["ok"], payload["reason"],
+                                               payload.get("wall_s", elapsed),
+                                               payload.get("metrics", {}))
             if verdict is None:
                 still_active.append((job, proc, queue, t0))
             else:
                 proc.join(timeout=2.0)
+                if proc.is_alive():
+                    proc.kill()
                 results[job.label] = verdict
         active = still_active
 

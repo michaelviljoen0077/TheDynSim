@@ -48,8 +48,11 @@ class SpatialHash:
                 cell_rows.append(i)
         self.buckets = buckets
         layers: dict[int, list[dict]] = {}
-        for (st, _sp), layer in buckets.items():
-            layers.setdefault(st, []).append(layer)
+        # Sort by (stratum, species_id) so the species-none `within`/`nearest`
+        # layer order is a stable function of species id — never of which species
+        # happens to hold the lowest alive row (which unrelated plugins can shift).
+        for st, _sp in sorted(buckets.keys()):
+            layers.setdefault(st, []).append(buckets[(st, _sp)])
         self._layers_by_stratum = layers
 
     def _target_layers(self, stratum: int, species_id: int | None) -> list[dict]:

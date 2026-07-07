@@ -221,7 +221,7 @@ def create_app(seed: int = 424242) -> FastAPI:
         generation = eid & 0xFFFF
         with runner.lock:
             store = runner.world.store
-            if index >= store.alive.size or not bool(store.alive[index]) \
+            if index < 0 or index >= store.alive.size or not bool(store.alive[index]) \
                     or int(store.generation[index]) != generation:
                 return {"error": "not found or stale"}
             sid = int(store.species_id[index])

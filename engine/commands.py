@@ -27,6 +27,7 @@ class CommandBuffer:
     ops: list[tuple] = field(default_factory=list)
     stale_ops: int = 0
     spawned_handles: list[int] = field(default_factory=list)
+    flora_bites: list[tuple[int, int, float]] = field(default_factory=list)
 
     def spawn(self, species_id: int, x: float, y: float, z: float,
               stratum: int, energy: float, plugin_id: int = -1) -> None:
@@ -53,8 +54,16 @@ class CommandBuffer:
         overwritten by the victim plugin's buffered write."""
         self.ops.append((OP_DRAIN_ENERGY, handle, amount))
 
+    def eat_flora(self, ix: int, iy: int, amount: float) -> None:
+        """Buffered flora consumption: the caller's returned bite is an estimate
+        against tick-start density (like `attack`); the field is drained here at
+        tick end, in submission order and clamped, so grazers see tick-start state
+        and the grass can never be over-consumed."""
+        self.flora_bites.append((ix, iy, amount))
+
     def apply(self, store: EntityStore, world_max: float,
-              predation_marks: set[int] | None = None) -> None:
+              predation_marks: set[int] | None = None,
+              flora: np.ndarray | None = None) -> None:
         """Apply ops in submission order (deterministic). Clamp positions to world bounds.
 
         Position math batches through Python-float staging dicts and writes back
@@ -113,4 +122,9 @@ class CommandBuffer:
             xs[rows] = vals[:, 0]
             ys[rows] = vals[:, 1]
             zs[rows] = vals[:, 2]
+        if flora is not None and self.flora_bites:
+            for ix, iy, amount in self.flora_bites:
+                avail = float(flora[ix, iy])
+                flora[ix, iy] = avail - min(avail, amount)
+        self.flora_bites.clear()
         self.ops.clear()

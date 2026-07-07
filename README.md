@@ -26,6 +26,12 @@ Open http://localhost:8000 — live 3D world with day-night cycle, weather, a gr
 herd and a bird flock, stratum toggles, and run controls. For frontend dev with HMR:
 `cd web; npm run dev` (Vite proxies to :8000).
 
+> **Security:** `/api/plugins/install` compiles and `exec`s plugin source. The AST
+> validator + restricted builtins are an *accidental-damage* gate, not a sandbox
+> against a malicious actor, and the control endpoints are unauthenticated. Keep the
+> server bound to `localhost` (uvicorn's default) — never run it with `--host 0.0.0.0`
+> or otherwise expose it to an untrusted network.
+
 ## Layout
 
 ```

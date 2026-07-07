@@ -11,7 +11,7 @@ import pytest
 
 from engine import World, WorldConfig, save_snapshot
 from engine.plugin_host import PluginHost
-from governor.shadow import Budgets, ShadowJob, run_shadow_batch
+from governor.shadow import Budgets, ShadowJob, _drain, run_shadow_batch
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "plugins_examples"
 
@@ -139,3 +139,34 @@ def test_socket_block_in_worker(live_snapshot):
     p.start()
     p.join(timeout=20)
     assert q.get(timeout=5).startswith("blocked")
+
+
+def _big_payload_worker(q):
+    # A payload far larger than any OS pipe buffer (~64KB): the feeder thread
+    # blocks until the parent reads it, so the process cannot exit until drained.
+    q.put({"label": "big", "ok": True, "reason": "", "metrics": {"blob": "x" * 500_000}})
+
+
+def test_large_payload_is_drained_before_exit():
+    """Regression: draining the queue *while the worker is alive* is what lets a
+    worker with a large metrics payload exit — otherwise it deadlocks against the
+    pipe buffer and the parent spuriously wall-budget-kills a successful run."""
+    import multiprocessing as mp
+    import time
+
+    ctx = mp.get_context("spawn")
+    q = ctx.Queue()
+    p = ctx.Process(target=_big_payload_worker, args=(q,))
+    p.start()
+
+    payload = None
+    deadline = time.perf_counter() + 15
+    while payload is None and time.perf_counter() < deadline:
+        payload = _drain(q)
+        if payload is None:
+            time.sleep(0.05)
+
+    assert payload is not None and payload["ok"], "large payload was never drained"
+    p.join(timeout=5)
+    assert not p.is_alive(), "worker never exited — pipe-buffer deadlock"
+

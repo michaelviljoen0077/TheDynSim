@@ -203,9 +203,7 @@ class Orchestrator:
             try:
                 info = self.runner.promote(proposal.plugin_source)
                 decision = "promoted"
-                self.notebook.db.execute(
-                    "UPDATE candidates SET fate='promoted' WHERE id=?", (cand_id,))
-                self.notebook.db.commit()
+                self.notebook.set_candidate_fate(cand_id, "promoted")
                 self.notebook.record_intervention(
                     report["epoch"], report["tick"], "promotion",
                     plugin_name=info["installed"],
@@ -218,9 +216,7 @@ class Orchestrator:
                 }
             except Exception as e:  # noqa: BLE001 — promotion failure degrades to no_change
                 log.exception("promotion failed")
-                self.notebook.db.execute(
-                    "UPDATE candidates SET fate='promotion_failed' WHERE id=?", (cand_id,))
-                self.notebook.db.commit()
+                self.notebook.set_candidate_fate(cand_id, "promotion_failed")
                 decision = "no_change"
                 self.status.detail = f"promotion failed: {e}"
 

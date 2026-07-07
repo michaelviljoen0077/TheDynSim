@@ -56,3 +56,17 @@ def test_positions_clamped_to_world():
     i = handle_index(h)
     assert w.store.px[i] == 0.0
     assert w.store.py[i] < w.config.size
+
+
+def test_flora_consumption_is_deferred_and_clamped():
+    w, _sp = make_world()
+    ix, iy = 5, 5
+    w.flora.density[ix, iy] = 0.1
+    tick_start = float(w.flora.density[ix, iy])
+    # two grazers eat the same cell in one tick, each estimating against tick-start
+    w.commands.eat_flora(ix, iy, 0.08)
+    w.commands.eat_flora(ix, iy, 0.08)
+    assert float(w.flora.density[ix, iy]) == tick_start   # reads still see tick-start density
+    w.commands.apply(w.store, float(w.config.size), flora=w.flora.density)
+    assert float(w.flora.density[ix, iy]) == 0.0   # drained in order, clamped, never negative
+

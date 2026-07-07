@@ -121,7 +121,7 @@ def test_streaming_gil_gate(client):
 
     # two attempts: this is a regression tripwire, not the protocol benchmark —
     # a single window on a loaded CI box can catch a scheduling hiccup
-    for attempt in (1, 2):
+    for _attempt in (1, 2):
         headless_rate, streaming_rate = measure()
         if streaming_rate >= 0.8 * headless_rate:
             return

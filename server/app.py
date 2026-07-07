@@ -55,6 +55,22 @@ def create_app(seed: int = 424242) -> FastAPI:
     app = FastAPI(title="Genesis v2", lifespan=lifespan)
     app.state.runner = runner
 
+    # governor wiring: live Ollama if reachable, else endpoints report unconfigured
+    from governor.llm import OllamaProvider
+    from governor.notebook import Notebook
+    from governor.orchestrator import Orchestrator
+
+    provider = OllamaProvider()
+    if provider.available():
+        notebook = Notebook(Path(__file__).resolve().parent.parent / "data" / "run.db")
+        if notebook.resume_latest_run() is None:
+            notebook.start_run(seed, runner.config.to_json())
+        app.state.orchestrator = Orchestrator(runner, notebook, provider)
+        log.info("governor configured with %s", provider.name)
+    else:
+        app.state.orchestrator = None
+        log.warning("Ollama unreachable or model missing — governor disabled for this run")
+
     # -- REST control -------------------------------------------------------
 
     @app.get("/api/state")
@@ -105,6 +121,33 @@ def create_app(seed: int = 424242) -> FastAPI:
             return runner.rollback()
         except FileNotFoundError as e:
             return {"error": str(e)}
+
+    # -- governor (Epic 3) ------------------------------------------------------
+
+    @app.post("/api/governor/cycle")
+    def trigger_cycle() -> dict:
+        orch = getattr(app.state, "orchestrator", None)
+        if orch is None:
+            return {"error": "governor not configured (no provider available)"}
+        started = orch.run_cycle_async()
+        return {"started": started, "status": orch.status.__dict__}
+
+    @app.get("/api/governor/status")
+    def governor_status() -> dict:
+        orch = getattr(app.state, "orchestrator", None)
+        if orch is None:
+            return {"configured": False}
+        return {"configured": True, "provider": orch.provider.name, **orch.status.__dict__}
+
+    @app.get("/api/cycles")
+    def get_cycles() -> list[dict]:
+        orch = getattr(app.state, "orchestrator", None)
+        return orch.notebook.cycles() if orch else []
+
+    @app.get("/api/cycles/{cycle_id}/candidates")
+    def get_candidates(cycle_id: str) -> list[dict]:
+        orch = getattr(app.state, "orchestrator", None)
+        return orch.notebook.candidates_for(cycle_id) if orch else []
 
     # -- WebSocket stream ----------------------------------------------------
 

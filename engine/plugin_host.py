@@ -92,12 +92,25 @@ class PluginHost:
         if name in self.plugins:
             raise PluginInstallError([{"code": "duplicate-plugin", "message": f"plugin {name!r} already installed", "line": 0}])
 
+        # lineage replacement (refinement, not addition): a candidate whose
+        # lineage_parent names an installed plugin REPLACES it — the parent is
+        # retired and the child adopts its species (entities live on, prop
+        # layout preserved). This is how the governor reworks existing systems.
+        replacing: PluginRecord | None = None
+        adoptable: set[str] = set()
+        if run_setup and meta.get("lineage_parent"):
+            parent = self.plugins.get(meta["lineage_parent"])
+            if parent is not None and parent.status in ("live", "quarantined"):
+                replacing = parent
+                adoptable = set(parent.meta.get("species", [])) & set(meta["species"])
+
         namespace = {"__builtins__": dict(SAFE_BUILTINS), "math": math, "typing": typing}
         code = compile(source, f"<plugin:{name}>", "exec")
         exec(code, namespace)  # noqa: S102 — source passed the AST gate above
 
         plugin_id = len(self.order)
-        api = WorldAPI(self.world, name, plugin_id, list(meta["species"]))
+        api = WorldAPI(self.world, name, plugin_id, list(meta["species"]),
+                       adoptable_species=adoptable)
         record = PluginRecord(
             name=name, plugin_id=plugin_id, source=source, meta=meta, api=api,
             setup_fn=namespace["setup"], on_tick_fn=namespace["on_tick"],
@@ -113,7 +126,12 @@ class PluginHost:
             # setup runs at promotion time, outside a tick: apply its buffered
             # effects now so the plugin's initial population exists atomically
             self.world.commands.apply(self.world.store, float(self.world.config.size),
-                                      flora=self.world.flora.density)
+                                      flora=self.world.flora.density,
+                                      speeds=self.world.registry.speeds_array())
+            if replacing is not None:
+                replacing.status = "retired"
+                replacing.events.append(
+                    {"tick": self.world.tick, "retired": f"replaced by {name}"})
         self.plugins[name] = record
         self.order.append(name)
         self._sync_manifest()

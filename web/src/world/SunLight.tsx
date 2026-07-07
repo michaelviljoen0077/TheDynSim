@@ -3,13 +3,14 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore } from '../state/store';
 
-const NIGHT_SKY = new THREE.Color('#050912');
+const NIGHT_SKY = new THREE.Color('#0a1226');
+const MOON = new THREE.Color('#9fb4de');
 const DAWN_SKY = new THREE.Color('#c97b3f');
 const DAY_SKY = new THREE.Color('#8fc3e8');
 const OVERCAST = new THREE.Color('#5a6470');
 const SUN_LOW = new THREE.Color('#ff9440');
 const SUN_HIGH = new THREE.Color('#fff5e0');
-const AMB_NIGHT = new THREE.Color('#31406b');
+const AMB_NIGHT = new THREE.Color('#4d5f92');
 const AMB_DAY = new THREE.Color('#cfe0f5');
 const tmpSky = new THREE.Color();
 
@@ -20,6 +21,7 @@ function smoothstep(x: number, a: number, b: number): number {
 
 export function SunLight() {
   const sunRef = useRef<THREE.DirectionalLight>(null);
+  const moonRef = useRef<THREE.DirectionalLight>(null);
   const ambRef = useRef<THREE.AmbientLight>(null);
   const scene = useThree((s) => s.scene);
   const size = useStore((s) => s.sync?.size ?? 128);
@@ -57,7 +59,19 @@ export function SunLight() {
     sun.visible = elev > -0.06;
 
     amb.color.copy(AMB_NIGHT).lerp(AMB_DAY, daylight);
-    amb.intensity = 0.22 + 0.5 * daylight;
+    // night floor kept generous: the world must stay watchable at midnight
+    amb.intensity = 0.5 + 0.4 * daylight;
+
+    // moon: cool fill from opposite the sun, fading out as daylight rises
+    const moon = moonRef.current;
+    if (moon) {
+      moon.position.set(c - Math.cos(theta) * r, Math.max(0.25, -elev) * r, c - 0.35 * r);
+      moon.target.position.set(c, 0, c);
+      moon.target.updateMatrixWorld();
+      moon.color.copy(MOON);
+      moon.intensity = 0.55 * (1 - daylight) * (1 - 0.3 * precip);
+      moon.visible = daylight < 0.85;
+    }
 
     // Sky and fog share one colour so the horizon dissolves cleanly.
     tmpSky.copy(NIGHT_SKY).lerp(DAY_SKY, daylight);
@@ -69,8 +83,9 @@ export function SunLight() {
 
   return (
     <>
-      <ambientLight ref={ambRef} intensity={0.3} />
+      <ambientLight ref={ambRef} intensity={0.5} />
       <directionalLight ref={sunRef} intensity={1.2} position={[100, 100, 0]} />
+      <directionalLight ref={moonRef} intensity={0.5} position={[-100, 100, 0]} />
     </>
   );
 }

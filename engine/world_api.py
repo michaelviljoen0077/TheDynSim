@@ -55,13 +55,16 @@ class WorldAPI:
     SKY = SKY
 
     def __init__(self, world: World, plugin_name: str, plugin_id: int,
-                 declared_species: list[str]) -> None:
+                 declared_species: list[str],
+                 adoptable_species: set[str] | None = None) -> None:
         self._world = world
         self._plugin_name = plugin_name
         self._plugin_id = plugin_id
         self._declared = set(declared_species)
+        self._adoptable = set(adoptable_species or ())
         self._spawns_this_tick = 0
         self._owned_alive = 0
+        self.size = float(world.config.size)  # world edge length (positions span 0..size-1)
         self.rng = world.plugin_rng(plugin_name)
         self.store = PluginStore(
             world.plugin_stores[plugin_name], world.config.max_store_keys
@@ -108,14 +111,27 @@ class WorldAPI:
     # -- species & lifecycle ---------------------------------------------------
 
     def register_species(self, name: str, size: float = 1.0, color: str = "#cccccc",
-                         strata: tuple[int, ...] = (SURFACE,), props: tuple[str, ...] = ()) -> None:
+                         speed: float = 2.5, strata: tuple[int, ...] = (SURFACE,),
+                         props: tuple[str, ...] = ()) -> None:
         if name not in self._declared:
             raise CapabilityViolation(
                 "undeclared-species",
                 f"species {name!r} not in PLUGIN_META['species'] {sorted(self._declared)}",
             )
+        if name in self._world.registry.by_name:
+            if name in self._adoptable:
+                # lineage replacement: restyle/re-tune the species, keep its prop
+                # layout (live entities carry data in those slots)
+                self._world.registry.adopt(name, self._plugin_name,
+                                           size=size, color=color, speed=speed)
+                return
+            raise CapabilityViolation(
+                "duplicate-species",
+                f"species {name!r} already exists (owned by another plugin); to take it "
+                "over, set PLUGIN_META['lineage_parent'] to the owning plugin's name",
+            )
         self._world.registry.register(
-            name, plugin=self._plugin_name, size=size, color=color,
+            name, plugin=self._plugin_name, size=size, color=color, speed=speed,
             strata=tuple(strata), props=tuple(props),
         )
 

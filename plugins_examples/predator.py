@@ -10,7 +10,7 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "wolf", size=2.2, color="#8a4a4a",
+        "wolf", size=2.2, color="#8a4a4a", speed=1.7,
         strata=(world.SURFACE,), props=(),
     )
     for _ in range(10):

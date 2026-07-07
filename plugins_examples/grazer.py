@@ -10,7 +10,7 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "grazer", size=1.6, color="#c9a35c",
+        "grazer", size=1.6, color="#c9a35c", speed=1.8,
         strata=(world.SURFACE,), props=("maturity",),
     )
     for _ in range(120):
@@ -23,6 +23,18 @@ def on_tick(world):
     for grazer in world.entities("grazer"):
         energy = world.get(grazer, "energy") - 0.06
         x, y, _z = world.pos(grazer)
+
+        # in water: drowning drains fast; scramble uphill toward the shore
+        if world.water_at(x, y):
+            world.set(grazer, "energy", energy - 1.5)
+            best_dx, best_dy, best_h = 0.0, 0.0, world.height_at(x, y)
+            for ddx, ddy in ((3.0, 0.0), (-3.0, 0.0), (0.0, 3.0), (0.0, -3.0)):
+                h = world.height_at(x + ddx, y + ddy)
+                if h > best_h:
+                    best_dx, best_dy, best_h = ddx, ddy, h
+            world.move(grazer, best_dx / 2.0 + world.rng.uniform(-0.2, 0.2),
+                       best_dy / 2.0 + world.rng.uniform(-0.2, 0.2))
+            continue
 
         eaten = world.eat_flora(x, y, 0.03)
         energy += eaten * 60.0

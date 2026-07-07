@@ -111,3 +111,65 @@ def test_rebind_skips_setup_no_respawn(tmp_path):
     restored = load_snapshot(p)
     PluginHost.rebind(restored)
     assert restored.store.count == n0  # setup would have doubled populations
+
+
+GRAZER_MUTATION = '''
+PLUGIN_META = {"name": "grazer_herd_v2", "contract": 1, "species": ["grazer"],
+               "lineage_parent": "grazer_herd"}
+
+def setup(world):
+    world.register_species("grazer", size=1.6, color="#d8b06a", speed=2.0,
+                           strata=(world.SURFACE,), props=("maturity",))
+
+def on_tick(world):
+    for g in world.entities("grazer"):
+        e = world.get(g, "energy") - 0.05
+        x, y, _z = world.pos(g)
+        e += world.eat_flora(x, y, 0.03) * 60.0
+        world.set(g, "energy", min(e, 200.0))
+        world.move(g, world.rng.uniform(-1, 1), world.rng.uniform(-1, 1))
+'''
+
+
+def test_lineage_replacement_adopts_species(tmp_path):
+    """Refinement path: a mutation of a live plugin retires it and inherits its species."""
+    world = make_world()
+    host = host_with_examples(world)
+    world.run(60)
+    gid = world.registry.by_name["grazer"].id
+    pop_before = int(world.store.alive_indices(gid).size)
+    assert pop_before > 0
+
+    record = host.install(GRAZER_MUTATION)
+    assert record.status == "live"
+    assert host.plugins["grazer_herd"].status == "retired"
+    sp = world.registry.by_name["grazer"]
+    assert sp.plugin == "grazer_herd_v2"
+    assert sp.speed == 2.0
+    assert "maturity" in sp.prop_slots            # layout preserved
+    assert int(world.store.alive_indices(gid).size) == pop_before  # entities live on
+
+    # child actually drives the herd; retired parent no longer ticks
+    world.run(30)
+    assert int(world.store.alive_indices(gid).size) > 0
+    assert host.plugins["grazer_herd_v2"].error_count == 0
+
+    # replacement survives snapshot + rebind (rollback path)
+    p = save_snapshot(world, tmp_path / "replaced.npz")
+    restored = load_snapshot(p)
+    host2 = PluginHost.rebind(restored)
+    assert host2.plugins["grazer_herd"].status == "retired"
+    assert host2.plugins["grazer_herd_v2"].status == "live"
+    restored.run(30)
+    assert int(restored.store.alive_indices(gid).size) > 0
+
+
+def test_takeover_without_lineage_is_rejected():
+    world = make_world()
+    host = host_with_examples(world)
+    thief = GRAZER_MUTATION.replace('"lineage_parent": "grazer_herd"', '"lineage_parent": None') \
+                           .replace("grazer_herd_v2", "grazer_thief")
+    with pytest.raises(PluginInstallError) as e:
+        host.install(thief)
+    assert any("duplicate-species" in r["message"] or r["code"] == "setup-error"
+               for r in e.value.reasons)

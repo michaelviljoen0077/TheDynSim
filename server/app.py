@@ -41,15 +41,28 @@ class InstallBody(BaseModel):
     source: str
 
 
-def create_app(seed: int = 424242) -> FastAPI:
+def create_app(seed: int = 424242, world_size: int = 384) -> FastAPI:
     sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
-    runner = EngineRunner(WorldConfig(seed=seed), plugin_sources=sources)
+    runner = EngineRunner(WorldConfig(seed=seed, size=world_size), plugin_sources=sources)
 
     @contextlib.asynccontextmanager
-    async def lifespan(_app: FastAPI):
+    async def lifespan(app_: FastAPI):
         runner.start_thread()
         runner.start()
+
+        async def cadence_loop() -> None:
+            """Automatic evolution cadence (Story 3.6): fire a cycle when due."""
+            while True:
+                await asyncio.sleep(5.0)
+                orch = getattr(app_.state, "orchestrator", None)
+                if orch is not None and runner.running and orch.due():
+                    log.info("cadence: triggering evolution cycle at tick %d",
+                             runner.world.tick)
+                    orch.run_cycle_async()
+
+        cadence = asyncio.create_task(cadence_loop())
         yield
+        cadence.cancel()
         runner.shutdown()
 
     app = FastAPI(title="Genesis v2", lifespan=lifespan)

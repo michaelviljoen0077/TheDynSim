@@ -37,6 +37,9 @@ def on_tick(world):
   `setattr`/`print`/`input`. No dunder attribute access. No `global`/`nonlocal`.
 - All randomness through `world.rng` (a seeded per-plugin stream). Never `random`
   or `numpy` — they don't exist in the sandbox.
+- **No `set`/`frozenset`/`hash`/`id`** (including set literals `{a, b}` and set
+  comprehensions): their behavior varies between processes, which breaks
+  deterministic replay. Use lists, dicts, or sorted sequences instead.
 - `while True` without `break` draws a warning; shadow budgets will kill it.
 
 ## Execution model (read carefully — this is unusual)
@@ -59,9 +62,13 @@ def on_tick(world):
 ## WorldAPI
 
 ### Species & lifecycle
-- `world.register_species(name, size=1.0, color="#rrggbb", strata=(world.SURFACE,), props=("hunger",))`
+- `world.register_species(name, size=1.0, color="#rrggbb", speed=2.5, strata=(world.SURFACE,), props=("hunger",))`
   — only in `setup`, only names declared in `PLUGIN_META["species"]`. `props` are
-  per-entity float slots (max 8).
+  per-entity float slots (max 8). **`speed` is the engine-enforced maximum distance
+  per tick** (clamped to 0.1–8.0): whatever you pass to `move()`, an entity's net
+  displacement per tick never exceeds its species speed. Faster species should cost
+  more energy per tick — that's your design responsibility, and the fitness
+  function punishes free lunches.
 - `world.spawn(species, x, y, stratum=world.SURFACE, energy=100.0, z=0.0)` — owned species only.
 - `world.remove(handle)` — owned species only.
 
@@ -93,7 +100,20 @@ def on_tick(world):
   `world.rng.uniform(a, b)`, `world.rng.integers(a, b)`.
 - `world.store` — plugin-scoped persistent key-value state (int/float/str,
   snapshot-included): `world.store.get(key, default)`, `world.store.set(key, value)`.
+- `world.size` — world edge length; positions span `0 .. world.size - 1`.
 - Strata constants: `world.UNDERGROUND` (0), `world.SURFACE` (1), `world.SKY` (2).
+
+## Refining an existing system (lineage mutation)
+
+You don't have to add something new — you can **rework a live plugin**. Set
+`PLUGIN_META["lineage_parent"]` to the name of an installed plugin and declare
+(some of) its species: on promotion, the parent plugin is **retired** and your
+plugin **adopts its species and all living entities**. `register_species` for an
+adopted species updates its size/color/speed but keeps its prop-slot layout
+(live entities carry data in those slots). Your `setup` still runs — spawn extras
+only if the population genuinely needs reinforcement. This is the right move when
+the observation report shows an existing species is unstable, mis-tuned, or
+wasting a niche.
 
 ## Reference plugins
 

@@ -35,6 +35,11 @@ class GovernorConfig:
     shadow_ticks: int = 1200
     promotion_threshold: float = 0.5     # candidate.total must exceed this (control-relative)
     max_parallel_workers: int = 4
+    # automatic cadence: a new cycle starts once this many live-sim ticks have
+    # passed since the previous cycle finished (and the governor is idle).
+    # 10,000 ticks ~ 2.8 min at 60 tps — roughly one cycle's wall time, so the
+    # governor is thinking about as often as it possibly can without queueing.
+    cycle_every_ticks: int = 10_000
     budgets: Budgets = field(default_factory=Budgets)
     weights: FitnessWeights = field(default_factory=FitnessWeights)
 
@@ -58,6 +63,8 @@ class Orchestrator:
         self.status = CycleStatus()
         self._busy = threading.Lock()
         self._last_promotion: dict | None = None   # {cycle_id, plugin_name, expected, report}
+        # cadence anchor: first automatic cycle waits a full interval from startup
+        self.last_cycle_end_tick: int = runner.world.tick if runner is not None else 0
 
     # -- public -------------------------------------------------------------------
 
@@ -68,6 +75,13 @@ class Orchestrator:
         threading.Thread(target=self.run_cycle, name="governor-cycle", daemon=True).start()
         return True
 
+    def due(self) -> bool:
+        """True when the automatic cadence says a new cycle should start (Story 3.6)."""
+        if self._busy.locked():
+            return False
+        ticks_since = self.runner.world.tick - self.last_cycle_end_tick
+        return ticks_since >= self.config.cycle_every_ticks
+
     def run_cycle(self) -> str:
         with self._busy:
             try:
@@ -76,6 +90,8 @@ class Orchestrator:
                 log.exception("cycle failed")
                 self.status = CycleStatus("idle", detail=f"cycle error: {e}")
                 return "error"
+            finally:
+                self.last_cycle_end_tick = self.runner.world.tick
 
     # -- the cycle ------------------------------------------------------------------
 

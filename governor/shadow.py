@@ -23,9 +23,14 @@ WATCHDOG_POLL_S = 0.25
 
 @dataclass
 class Budgets:
-    wall_s: float = 60.0
+    wall_s: float = 180.0
     rss_mb: float = 1024.0
-    tick_ms: float = 50.0
+    tick_ms: float = 150.0
+    # a single slow tick (GC pause, page fault, scheduler hiccup — especially with
+    # 4 workers sharing the CPU) must not kill a run: disqualify only on SUSTAINED
+    # breach — this many consecutive over-budget ticks, or this fraction overall
+    tick_breach_consecutive: int = 10
+    tick_breach_fraction: float = 0.05
 
 
 @dataclass
@@ -78,6 +83,10 @@ def _shadow_worker(job: dict, queue: mp.Queue) -> None:
         samples: list[dict] = []
         tick_times: list[float] = []
         tick_budget_s = job["budgets"]["tick_ms"] / 1000.0
+        max_consecutive = int(job["budgets"].get("tick_breach_consecutive", 10))
+        breach_fraction = float(job["budgets"].get("tick_breach_fraction", 0.05))
+        max_total = max(20, int(job["ticks"] * breach_fraction))
+        breaches = consecutive = 0
         t_start = time.perf_counter()
         for i in range(job["ticks"]):
             t0 = time.perf_counter()
@@ -85,8 +94,14 @@ def _shadow_worker(job: dict, queue: mp.Queue) -> None:
             dt = time.perf_counter() - t0
             tick_times.append(dt)
             if dt > tick_budget_s:
+                breaches += 1
+                consecutive += 1
+            else:
+                consecutive = 0
+            if consecutive >= max_consecutive or breaches > max_total:
                 queue.put({"label": job["label"], "ok": False,
-                           "reason": f"tick-budget: {dt * 1000:.1f} ms > {job['budgets']['tick_ms']} ms at tick {i}",
+                           "reason": f"tick-budget: {breaches} ticks over {job['budgets']['tick_ms']} ms "
+                                     f"({consecutive} consecutive) by tick {i}",
                            "metrics": {"samples": samples}})
                 return
             if i % SAMPLE_EVERY == 0:

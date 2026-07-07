@@ -32,6 +32,7 @@ class Species:
     plugin: str          # owning plugin name ("" = engine-owned)
     size: float = 1.0
     color: str = "#cccccc"
+    speed: float = 2.5   # engine-enforced max distance per tick (see CommandBuffer.apply)
     strata: tuple[int, ...] = (SURFACE,)
     prop_slots: dict[str, int] = field(default_factory=dict)  # prop name -> slot
 
@@ -48,6 +49,7 @@ class SpeciesRegistry:
         plugin: str = "",
         size: float = 1.0,
         color: str = "#cccccc",
+        speed: float = 2.5,
         strata: tuple[int, ...] = (SURFACE,),
         props: tuple[str, ...] = (),
     ) -> Species:
@@ -61,6 +63,7 @@ class SpeciesRegistry:
             plugin=plugin,
             size=size,
             color=color,
+            speed=max(0.1, min(float(speed), 8.0)),
             strata=tuple(strata),
             prop_slots={p: i for i, p in enumerate(props)},
         )
@@ -68,11 +71,33 @@ class SpeciesRegistry:
         self.by_id.append(sp)
         return sp
 
+    def adopt(self, name: str, new_plugin: str, size: float | None = None,
+              color: str | None = None, speed: float | None = None) -> Species:
+        """Transfer species ownership to a replacement plugin (lineage mutation).
+
+        Prop slots are preserved — live entities carry data in them; a mutation
+        may restyle and re-tune the species but not re-shape its state layout.
+        """
+        sp = self.by_name[name]
+        sp.plugin = new_plugin
+        if size is not None:
+            sp.size = size
+        if color is not None:
+            sp.color = color
+        if speed is not None:
+            sp.speed = max(0.1, min(float(speed), 8.0))
+        return sp
+
+    def speeds_array(self) -> np.ndarray:
+        """Per-species max speed, indexed by species id (for CommandBuffer.apply)."""
+        return np.array([s.speed for s in self.by_id] or [2.5], dtype=np.float32)
+
     def to_state(self) -> list[dict]:
         return [
             {
                 "id": s.id, "name": s.name, "plugin": s.plugin, "size": s.size,
-                "color": s.color, "strata": list(s.strata), "prop_slots": s.prop_slots,
+                "color": s.color, "speed": s.speed, "strata": list(s.strata),
+                "prop_slots": s.prop_slots,
             }
             for s in self.by_id
         ]
@@ -83,7 +108,8 @@ class SpeciesRegistry:
         for d in state:
             sp = Species(
                 id=d["id"], name=d["name"], plugin=d["plugin"], size=d["size"],
-                color=d["color"], strata=tuple(d["strata"]), prop_slots=dict(d["prop_slots"]),
+                color=d["color"], speed=d.get("speed", 2.5), strata=tuple(d["strata"]),
+                prop_slots=dict(d["prop_slots"]),
             )
             reg.by_name[sp.name] = sp
             reg.by_id.append(sp)

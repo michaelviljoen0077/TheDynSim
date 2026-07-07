@@ -83,7 +83,7 @@ class World:
         for hook in self.tick_hooks:  # PluginHost.on_tick attaches here (Epic 2)
             hook(self)
         self.commands.apply(self.store, float(self.config.size), self._predation_marks,
-                            flora=self.flora.density)
+                            flora=self.flora.density, speeds=self.registry.speeds_array())
         self._death_sweep()
         alive = self.store.alive
         self.store.age[alive] += 1

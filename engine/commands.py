@@ -63,14 +63,23 @@ class CommandBuffer:
 
     def apply(self, store: EntityStore, world_max: float,
               predation_marks: set[int] | None = None,
-              flora: np.ndarray | None = None) -> None:
+              flora: np.ndarray | None = None,
+              speeds: np.ndarray | None = None) -> None:
         """Apply ops in submission order (deterministic). Clamp positions to world bounds.
+
+        Positions clamp to [0, world_max - 1]: the terrain's last vertex is at
+        world_max - 1, so this keeps entities on the rendered map (an entity at
+        world_max - 1e-3 would hover visibly past the terrain rim).
+
+        `speeds` (per-species max distance/tick) caps each entity's net
+        displacement this tick — the engine-enforced speed limit, so no plugin
+        can teleport its creatures regardless of what it passes to move().
 
         Position math batches through Python-float staging dicts and writes back
         vectorized — per-element NumPy scalar read-modify-write is the hot-path
         killer (Spike A / benchmark finding).
         """
-        hi = world_max - 1e-3
+        hi = world_max - 1.0
         self.spawned_handles.clear()
         alive = store.alive
         generation = store.generation
@@ -119,6 +128,17 @@ class CommandBuffer:
         if moved:
             rows = np.fromiter(moved.keys(), dtype=np.int64, count=len(moved))
             vals = np.array(list(moved.values()), dtype=np.float32)
+            if speeds is not None:
+                # clamp net horizontal displacement to the species' speed
+                dx = vals[:, 0] - xs[rows]
+                dy = vals[:, 1] - ys[rows]
+                dist = np.sqrt(dx * dx + dy * dy)
+                limit = speeds[store.species_id[rows]]
+                over = dist > limit
+                if np.any(over):
+                    scale = np.where(over, limit / np.maximum(dist, 1e-9), 1.0)
+                    vals[:, 0] = np.clip(xs[rows] + dx * scale, 0.0, hi)
+                    vals[:, 1] = np.clip(ys[rows] + dy * scale, 0.0, hi)
             xs[rows] = vals[:, 0]
             ys[rows] = vals[:, 1]
             zs[rows] = vals[:, 2]

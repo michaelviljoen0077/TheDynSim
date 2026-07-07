@@ -1,0 +1,6 @@
+data/
+legacy/
+__pycache__/
+node_modules/
+.venv/
+*.npz

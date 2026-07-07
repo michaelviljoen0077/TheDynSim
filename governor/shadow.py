@@ -1,0 +1,189 @@
+"""ShadowPool: sandboxed candidate evaluation in isolated spawn processes.
+
+Each job forks the live world from a snapshot (with its live plugin set),
+optionally installs one candidate, runs N headless ticks, and reports metrics.
+Budgets are enforced Windows-native (Spike C, docs/spikes.md): a parent-side
+psutil watchdog polls RSS + wall-clock at 250 ms and hard-kills on breach;
+per-tick time is metered in-worker. A control job (candidate=None) runs the
+same world untouched — fitness is always a delta vs "do nothing" (FR14/FR15).
+"""
+
+from __future__ import annotations
+
+import multiprocessing as mp
+import time
+from dataclasses import asdict, dataclass, field
+
+import psutil
+
+SAMPLE_EVERY = 50
+WATCHDOG_POLL_S = 0.25
+
+
+@dataclass
+class Budgets:
+    wall_s: float = 60.0
+    rss_mb: float = 1024.0
+    tick_ms: float = 50.0
+
+
+@dataclass
+class ShadowJob:
+    snapshot_path: str
+    candidate_source: str | None      # None = baseline control run
+    ticks: int = 2000
+    budgets: Budgets = field(default_factory=Budgets)
+    label: str = "control"
+
+
+@dataclass
+class ShadowResult:
+    label: str
+    ok: bool
+    reason: str = ""
+    wall_s: float = 0.0
+    metrics: dict = field(default_factory=dict)
+
+
+def _sandbox_bootstrap() -> None:
+    """Deny network access in the worker (accidental-damage threat model)."""
+    import socket
+
+    def _deny(*_a, **_k):
+        raise RuntimeError("sandbox: network access is disabled in shadow workers")
+
+    socket.socket = _deny        # type: ignore[misc, assignment]
+    socket.create_connection = _deny  # type: ignore[assignment]
+
+
+def _shadow_worker(job: dict, queue: mp.Queue) -> None:
+    """Worker entrypoint (module-level: Windows spawn needs it picklable by ref)."""
+    _sandbox_bootstrap()
+    try:
+        from engine import load_snapshot
+        from engine.plugin_host import PluginHost, PluginInstallError
+
+        world = load_snapshot(job["snapshot_path"])
+        host = PluginHost.rebind(world)
+        if job["candidate_source"] is not None:
+            try:
+                host.install(job["candidate_source"], run_setup=True)
+            except PluginInstallError as e:
+                queue.put({"label": job["label"], "ok": False,
+                           "reason": f"install-failed: {e.reasons}", "metrics": {}})
+                return
+
+        pops0 = _populations(world)
+        samples: list[dict] = []
+        tick_times: list[float] = []
+        tick_budget_s = job["budgets"]["tick_ms"] / 1000.0
+        t_start = time.perf_counter()
+        for i in range(job["ticks"]):
+            t0 = time.perf_counter()
+            world.step()
+            dt = time.perf_counter() - t0
+            tick_times.append(dt)
+            if dt > tick_budget_s:
+                queue.put({"label": job["label"], "ok": False,
+                           "reason": f"tick-budget: {dt * 1000:.1f} ms > {job['budgets']['tick_ms']} ms at tick {i}",
+                           "metrics": {"samples": samples}})
+                return
+            if i % SAMPLE_EVERY == 0:
+                samples.append({
+                    "tick": world.tick,
+                    "populations": _populations(world),
+                    "flora_mean": round(float(world.flora.density.mean()), 5),
+                })
+
+        plugin_errors = {name: r.error_count for name, r in host.plugins.items() if r.error_count}
+        quarantined = [name for name, r in host.plugins.items() if r.status == "quarantined"]
+        pops1 = _populations(world)
+        arr = sorted(tick_times)
+        metrics = {
+            "samples": samples,
+            "initial_populations": pops0,
+            "final_populations": pops1,
+            "extinctions": sorted(s for s, n in pops0.items() if n > 0 and pops1.get(s, 0) == 0),
+            "deaths": world.deaths,
+            "plugin_errors": plugin_errors,
+            "quarantined": quarantined,
+            "flora_mean": round(float(world.flora.density.mean()), 5),
+            "p95_tick_ms": round(arr[int(len(arr) * 0.95)] * 1000, 3) if arr else 0.0,
+        }
+        if quarantined:
+            queue.put({"label": job["label"], "ok": False,
+                       "reason": f"quarantined-in-shadow: {quarantined}", "metrics": metrics})
+            return
+        queue.put({
+            "label": job["label"], "ok": True, "reason": "",
+            "wall_s": round(time.perf_counter() - t_start, 2), "metrics": metrics,
+        })
+    except Exception as e:  # noqa: BLE001 — worker boundary: everything becomes a result
+        queue.put({"label": job["label"], "ok": False,
+                   "reason": f"worker-crash: {type(e).__name__}: {e}", "metrics": {}})
+
+
+def _populations(world) -> dict[str, int]:
+    return {
+        sp.name: int(world.store.alive_indices(sp.id).size)
+        for sp in world.registry.by_id
+    }
+
+
+def run_shadow_batch(jobs: list[ShadowJob], max_parallel: int = 4) -> list[ShadowResult]:
+    """Run jobs in parallel spawn processes, each under its own watchdog."""
+    results: dict[str, ShadowResult] = {}
+    pending = list(jobs)
+    active: list[tuple[ShadowJob, mp.Process, mp.Queue, float]] = []
+    ctx = mp.get_context("spawn")
+
+    while pending or active:
+        while pending and len(active) < max_parallel:
+            job = pending.pop(0)
+            queue: mp.Queue = ctx.Queue()
+            proc = ctx.Process(target=_shadow_worker, args=(asdict(job), queue), daemon=True)
+            proc.start()
+            active.append((job, proc, queue, time.perf_counter()))
+
+        time.sleep(WATCHDOG_POLL_S)
+        still_active = []
+        for job, proc, queue, t0 in active:
+            elapsed = time.perf_counter() - t0
+            verdict: ShadowResult | None = None
+            rss_mb = 0.0
+            if proc.is_alive():
+                try:
+                    rss_mb = psutil.Process(proc.pid).memory_info().rss / (1024 * 1024)
+                except psutil.NoSuchProcess:
+                    pass
+            if proc.is_alive() and rss_mb > job.budgets.rss_mb:
+                proc.kill()
+                verdict = ShadowResult(job.label, False,
+                                       f"rss-budget: {rss_mb:.0f} MB > {job.budgets.rss_mb} MB",
+                                       elapsed)
+            elif proc.is_alive() and elapsed > job.budgets.wall_s:
+                proc.kill()
+                verdict = ShadowResult(job.label, False,
+                                       f"wall-budget: {elapsed:.1f} s > {job.budgets.wall_s} s",
+                                       elapsed)
+            elif not proc.is_alive():
+                payload = None
+                try:
+                    payload = queue.get_nowait()
+                except Exception:  # noqa: BLE001 — empty queue == crashed silently
+                    payload = None
+                if payload is None:
+                    verdict = ShadowResult(job.label, False,
+                                           f"worker-died: exit code {proc.exitcode}", elapsed)
+                else:
+                    verdict = ShadowResult(payload["label"], payload["ok"], payload["reason"],
+                                           payload.get("wall_s", elapsed),
+                                           payload.get("metrics", {}))
+            if verdict is None:
+                still_active.append((job, proc, queue, t0))
+            else:
+                proc.join(timeout=2.0)
+                results[job.label] = verdict
+        active = still_active
+
+    return [results[j.label] for j in jobs]

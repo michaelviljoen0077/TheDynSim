@@ -34,6 +34,8 @@ def _header(world: World) -> dict:
         },
         "plugin_stores": {k: world.plugin_stores[k] for k in sorted(world.plugin_stores)},
         "species": world.registry.to_state(),
+        "deaths": world.deaths,
+        "plugin_manifest": world.plugin_manifest,
     }
 
 
@@ -79,6 +81,8 @@ def load_snapshot(path: str | Path) -> World:
         g.bit_generator.state = state
         world.plugin_rngs[name] = g
     world.plugin_stores = {k: dict(v) for k, v in header["plugin_stores"].items()}
+    world.deaths = {k: dict(v) for k, v in header.get("deaths", {}).items()}
+    world.plugin_manifest = list(header.get("plugin_manifest", []))
     return world
 
 

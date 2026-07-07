@@ -38,6 +38,12 @@ class World:
         self.plugin_stores: dict[str, dict[str, float | int | str]] = {}
         # tick hooks: where PluginHost.on_tick attaches (code wiring, not state — not snapshotted)
         self.tick_hooks: list = []
+        # death ledger: species name -> cause -> count (snapshot-included, feeds reports)
+        self.deaths: dict[str, dict[str, int]] = {}
+        # live plugin set (name/source/meta/status) maintained by PluginHost; snapshot-included
+        # so rollback restores world + plugin set through one mechanism
+        self.plugin_manifest: list[dict] = []
+        self._predation_marks: set[int] = set()  # transient within a tick
         if _generate:
             self.terrain = Terrain.generate(
                 self.rng, config.size, config.terrain_octaves, config.sea_level_quantile
@@ -76,10 +82,30 @@ class World:
         self.spatial.rebuild(self.store)
         for hook in self.tick_hooks:  # PluginHost.on_tick attaches here (Epic 2)
             hook(self)
-        self.commands.apply(self.store, float(self.config.size))
+        self.commands.apply(self.store, float(self.config.size), self._predation_marks)
+        self._death_sweep()
         alive = self.store.alive
         self.store.age[alive] += 1
         self.tick += 1
+
+    def mark_predation(self, row: int) -> None:
+        self._predation_marks.add(row)
+
+    def record_death(self, species_name: str, cause: str) -> None:
+        by_cause = self.deaths.setdefault(species_name, {})
+        by_cause[cause] = by_cause.get(cause, 0) + 1
+
+    def _death_sweep(self) -> None:
+        """Engine-mediated death: any entity at energy <= 0 dies, with cause attribution."""
+        store = self.store
+        dead = np.flatnonzero(store.alive & (store.energy <= 0.0))
+        for row in dead.tolist():
+            species = self.registry.by_id[int(store.species_id[row])].name
+            cause = "predation" if row in self._predation_marks else "starvation"
+            handle = (row << 16) | int(store.generation[row])
+            store.remove(handle)
+            self.record_death(species, cause)
+        self._predation_marks.clear()
 
     def run(self, ticks: int) -> None:
         for _ in range(ticks):

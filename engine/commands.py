@@ -19,6 +19,7 @@ OP_MOVE = 2
 OP_SET_ENERGY = 3
 OP_SET_PROP = 4
 OP_SET_STRATUM = 5
+OP_DRAIN_ENERGY = 6
 
 
 @dataclass
@@ -46,7 +47,14 @@ class CommandBuffer:
     def set_stratum(self, handle: int, stratum: int) -> None:
         self.ops.append((OP_SET_STRATUM, handle, stratum))
 
-    def apply(self, store: EntityStore, world_max: float) -> None:
+    def drain_energy(self, handle: int, amount: float) -> None:
+        """Predation drain: applied as a delta AFTER earlier ops (incl. the prey's
+        own set_energy), so an attack in the same tick cannot be silently
+        overwritten by the victim plugin's buffered write."""
+        self.ops.append((OP_DRAIN_ENERGY, handle, amount))
+
+    def apply(self, store: EntityStore, world_max: float,
+              predation_marks: set[int] | None = None) -> None:
         """Apply ops in submission order (deterministic). Clamp positions to world bounds.
 
         Position math batches through Python-float staging dicts and writes back
@@ -94,6 +102,11 @@ class CommandBuffer:
                 store.props[i, op[2]] = op[3]
             elif kind == OP_SET_STRATUM:
                 store.stratum[i] = op[2]
+            elif kind == OP_DRAIN_ENERGY:
+                e = float(store.energy[i])
+                store.energy[i] = e - min(e, op[2])
+                if store.energy[i] <= 0.0 and predation_marks is not None:
+                    predation_marks.add(i)
         if moved:
             rows = np.fromiter(moved.keys(), dtype=np.int64, count=len(moved))
             vals = np.array(list(moved.values()), dtype=np.float32)

@@ -50,6 +50,16 @@ class Terrain:
         self.fertility: np.ndarray
         self.minerals: np.ndarray
         self.aquifer: np.ndarray
+        self._land_points: list[tuple[int, int]] | None = None
+
+    @property
+    def land_points(self) -> list[tuple[int, int]]:
+        """Grid coords of non-water columns (derived, cached — not snapshotted)."""
+        if self._land_points is None:
+            self._land_points = [
+                (int(a), int(b)) for a, b in np.argwhere(self.water_mask < 0.5).tolist()
+            ]
+        return self._land_points
 
     @classmethod
     def generate(cls, rng: np.random.Generator, size: int, octaves: int,
@@ -164,17 +174,17 @@ class Flora:
         light = 0.6 + 0.4 * float(np.sin(2 * np.pi * season_frac - np.pi / 2))
         temp_factor = np.exp(-((weather.temperature - 18.0) / 14.0) ** 2)
         moisture = np.clip(weather.soil_moisture + 0.3 * terrain.water_table, 0.0, 1.0)
-        growth = 0.004 * light * temp_factor * moisture * terrain.fertility
+        growth = 0.02 * light * temp_factor * moisture * terrain.fertility
         self.density += growth * self.density * (1.0 - self.density)
         # spread into fertile neighbours
         spread = _blur(self.density) - self.density
-        self.density += 0.02 * np.clip(spread, 0.0, None) * terrain.fertility
+        self.density += 0.05 * np.clip(spread, 0.0, None) * terrain.fertility
         # cold dieback + nothing grows on open water
         self.density = np.where(weather.temperature < 0.0, self.density * 0.995, self.density)
         self.density *= 1.0 - terrain.water_mask
         # trace re-seeding keeps recovery possible after grazing collapse
         self.density = np.maximum(
-            self.density, 0.002 * terrain.fertility * (1.0 - terrain.water_mask)
+            self.density, 0.008 * terrain.fertility * (1.0 - terrain.water_mask)
         )
         np.clip(self.density, 0.0, 1.0, out=self.density)
 

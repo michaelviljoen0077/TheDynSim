@@ -17,8 +17,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine import WorldConfig
-from server import demo_life, protocol
+from engine.plugin_host import PluginInstallError
+from server import protocol
 from server.runner import EngineRunner
+
+PLUGINS_DIR = Path(__file__).resolve().parent.parent / "plugins_examples"
+BASE_PLUGINS = ("grazer.py", "predator.py", "birds.py")
 
 log = logging.getLogger("genesis.server")
 
@@ -33,8 +37,13 @@ class SpeedBody(BaseModel):
     tps: float
 
 
+class InstallBody(BaseModel):
+    source: str
+
+
 def create_app(seed: int = 424242) -> FastAPI:
-    runner = EngineRunner(WorldConfig(seed=seed), setup=demo_life.setup)
+    sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
+    runner = EngineRunner(WorldConfig(seed=seed), plugin_sources=sources)
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -76,6 +85,26 @@ def create_app(seed: int = 424242) -> FastAPI:
     def control_speed(body: SpeedBody) -> dict:
         runner.set_tps(body.tps)
         return runner.state()
+
+    # -- plugins & rollback (Story 2.4) ---------------------------------------
+
+    @app.get("/api/plugins")
+    def get_plugins() -> list[dict]:
+        return runner.host.state()
+
+    @app.post("/api/plugins/install")
+    def install_plugin(body: InstallBody) -> dict:
+        try:
+            return runner.promote(body.source)
+        except PluginInstallError as e:
+            return {"error": "rejected", "reasons": e.reasons}
+
+    @app.post("/api/control/rollback")
+    def control_rollback() -> dict:
+        try:
+            return runner.rollback()
+        except FileNotFoundError as e:
+            return {"error": str(e)}
 
     # -- WebSocket stream ----------------------------------------------------
 

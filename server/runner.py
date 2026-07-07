@@ -9,28 +9,34 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Callable
+from pathlib import Path
 
-from engine import World, WorldConfig
+from engine import World, WorldConfig, load_snapshot, save_snapshot
+from engine.plugin_host import PluginHost, PluginInstallError
+
+SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "data" / "snapshots" / "live"
 
 
 class EngineRunner:
-    def __init__(self, config: WorldConfig, setup: Callable[[World], None] | None = None) -> None:
+    def __init__(self, config: WorldConfig, plugin_sources: list[str] | None = None) -> None:
         self.config = config
-        self._setup = setup
+        self._initial_sources = plugin_sources or []
         self.lock = threading.Lock()
+        self.host: PluginHost
         self.world = self._make_world()
         self.running = False
         self.target_tps = 60.0
         self.measured_tps = 0.0
+        self.last_promotion_snapshot: Path | None = None
         self._stop = threading.Event()
         self._step_once = threading.Event()
         self._thread: threading.Thread | None = None
 
     def _make_world(self) -> World:
         world = World(self.config)
-        if self._setup is not None:
-            self._setup(world)
+        self.host = PluginHost(world)
+        for source in self._initial_sources:
+            self.host.install(source)
         return world
 
     # -- lifecycle -----------------------------------------------------------
@@ -89,6 +95,39 @@ class EngineRunner:
     def reset(self) -> None:
         with self.lock:
             self.world = self._make_world()
+
+    # -- promotion & rollback (Story 2.4) --------------------------------------
+
+    def promote(self, source: str) -> dict:
+        """Pre-promotion snapshot -> hot-load. Raises PluginInstallError on rejection."""
+        with self.lock:
+            SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+            path = SNAPSHOT_DIR / f"pre-{self.world.epoch}-{self.world.tick}.npz"
+            save_snapshot(self.world, path)
+            try:
+                record = self.host.install(source)
+            except PluginInstallError:
+                path.unlink(missing_ok=True)  # nothing changed; drop the orphan snapshot
+                raise
+            self.last_promotion_snapshot = path
+            return {"installed": record.name, "snapshot": path.name}
+
+    def rollback(self) -> dict:
+        """Restore the pre-promotion snapshot (world + plugin set), bump epoch (NFR9)."""
+        if self.last_promotion_snapshot is None or not self.last_promotion_snapshot.exists():
+            raise FileNotFoundError("no promotion snapshot available to roll back to")
+        t0 = time.perf_counter()
+        with self.lock:
+            epoch = self.world.epoch + 1
+            world = load_snapshot(self.last_promotion_snapshot)
+            world.epoch = epoch
+            self.host = PluginHost.rebind(world)
+            self.world = world
+        return {
+            "restoredTick": self.world.tick,
+            "epoch": self.world.epoch,
+            "seconds": round(time.perf_counter() - t0, 3),
+        }
 
     def state(self) -> dict:
         w = self.world

@@ -4,3 +4,5 @@ __pycache__/
 node_modules/
 .venv/
 *.npz
+genesis_v2.egg-info/
+*.egg-info/

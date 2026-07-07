@@ -10,12 +10,21 @@ Spec package: [docs/brief.md](docs/brief.md) → [docs/prd.md](docs/prd.md) →
 ## Quickstart (Windows 11)
 
 ```powershell
-python -m pip install -e .[dev]
-python -m pytest                      # engine test suite (determinism is first-class)
+python -m pip install -e .[dev,server]
+python -m pytest                      # 25 tests: determinism, snapshots, streaming, GIL gate
 python scripts/bench_engine.py        # benchmark protocol (docs/architecture.md)
 ```
 
-Backend server and web Observatory land in Epics 1.5–1.6 / 4 (see PRD).
+**Watch the world** (two commands, Story 1.1 AC2):
+
+```powershell
+cd web; npm install; npm run build; cd ..
+python -m uvicorn server.app:app --port 8000
+```
+
+Open http://localhost:8000 — live 3D world with day-night cycle, weather, a grazing
+herd and a bird flock, stratum toggles, and run controls. For frontend dev with HMR:
+`cd web; npm run dev` (Vite proxies to :8000).
 
 ## Layout
 

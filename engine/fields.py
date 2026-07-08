@@ -177,11 +177,11 @@ class Flora:
         moisture = np.clip(weather.soil_moisture + 0.3 * terrain.water_table, 0.0, 1.0)
         # dt (ticks since last field update) scales growth so regrowth is
         # throttle-independent; dt=1 on flat/wrap keeps this byte-identical
-        growth = 0.02 * dt * light * temp_factor * moisture * terrain.fertility
+        growth = 0.045 * dt * light * temp_factor * moisture * terrain.fertility
         self.density += growth * self.density * (1.0 - self.density)
         # spread into fertile neighbours
         spread = _blur(self.density) - self.density
-        self.density += 0.05 * dt * np.clip(spread, 0.0, None) * terrain.fertility
+        self.density += 0.08 * dt * np.clip(spread, 0.0, None) * terrain.fertility
         # cold dieback + nothing grows on open water
         self.density = np.where(weather.temperature < 0.0, self.density * 0.995, self.density)
         self.density *= 1.0 - terrain.water_mask

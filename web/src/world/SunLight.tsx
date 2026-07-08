@@ -61,16 +61,18 @@ export function SunLight() {
       sun.target.position.set(0, 0, 0);
       sun.target.updateMatrixWorld();
       sun.color.copy(SUN_HIGH);
-      sun.intensity = 2.2 * (1 - 0.35 * precip);
+      sun.intensity = 2.6 * (1 - 0.35 * precip);
       sun.visible = true;
       amb.color.copy(AMB_NIGHT);
-      amb.intensity = 0.18; // low starlight fill so the night side reads as night
+      amb.intensity = 0.14; // very low starlight fill — the dark side stays clearly dark
       if (moon) {
-        moon.position.set(-rr, -rr * 0.25, -rr * 0.35); // opposite: faint far-side fill
+        // faint cool moon on the far side, kept dim so it never washes out the
+        // terminator (a bright moon here is what made the ball look uniformly lit)
+        moon.position.set(-rr, -rr * 0.25, -rr * 0.35);
         moon.target.position.set(0, 0, 0);
         moon.target.updateMatrixWorld();
         moon.color.copy(MOON);
-        moon.intensity = 0.25;
+        moon.intensity = 0.08;
         moon.visible = true;
       }
       if (scene.background instanceof THREE.Color) scene.background.copy(SPACE);

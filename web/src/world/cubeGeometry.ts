@@ -37,6 +37,18 @@ export const FACES: CubeFace[] = [
   mk([-1, -1, -1], [1, 0, 0], [0, 0, 1]), // 5 bottom (-Y)
 ];
 
+/**
+ * Tangent warp of a face coordinate in [0,1]. The cube->sphere projection
+ * compresses cells near the cube edges/corners; pre-spreading the grid with
+ * tan((2t-1)·π/4) makes cells LARGER near the edges so they come out roughly
+ * uniform after projection — this removes the "squished near the corners" look.
+ * Endpoints are fixed (warp(0)=0, warp(1)=1), so faces still meet exactly.
+ */
+export function warp(t: number): number {
+  const w = Math.tan((t * 2 - 1) * (Math.PI / 4)); // [-1,1] -> [-1,1], denser at edges
+  return (w + 1) / 2;
+}
+
 /** Face-local normalized (fu, fv in [0,1]) -> point on the [-1,1]^3 cube. */
 export function cubePoint(face: number, fu: number, fv: number, out: THREE.Vector3): THREE.Vector3 {
   const f = FACES[face];
@@ -85,6 +97,12 @@ export function surfacePoint(
   outPos: THREE.Vector3,
   outNormal: THREE.Vector3,
 ): void {
+  // even out cube-sphere corner distortion (both terrain & entities call this,
+  // so they stay aligned); only warp when actually spherifying
+  if (spherify > 0) {
+    fu = fu + (warp(fu) - fu) * spherify;
+    fv = fv + (warp(fv) - fv) * spherify;
+  }
   cubePoint(face, fu, fv, _cube);
   if (spherify > 0) {
     cubeToSphere(_cube, _sph);

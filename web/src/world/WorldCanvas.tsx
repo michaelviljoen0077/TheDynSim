@@ -45,7 +45,7 @@ function FlatScene({ size }: { size: number }) {
 function PlanetGroup({ children }: { children: React.ReactNode }) {
   const ref = useRef<THREE.Group>(null);
   useFrame((_, delta) => {
-    if (ref.current) ref.current.rotation.y += delta * 0.06; // ~1 rotation / 105s
+    if (ref.current) ref.current.rotation.y += delta * 0.1; // ~1 rotation / 63s
   });
   return <group ref={ref}>{children}</group>;
 }

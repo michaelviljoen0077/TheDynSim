@@ -12,11 +12,9 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "bird", size=1.1, color="#7fd4ff", speed=1.6,
-        strata=(world.SKY,), props=("phase", "flock"),
+        "bird", size=0.7, color="#7fd4ff", speed=1.6,
+        strata=(world.SKY,), props=("phase", "heading"),
     )
-    for k in range(1, 5):  # 4 independent flocks
-        world.store.set("heading_" + str(k), world.rng.uniform(0.0, 6.28))
     for _ in range(120):
         x, y = world.random_surface_point()
         world.spawn("bird", x, y, stratum=world.SKY, energy=100.0,
@@ -24,24 +22,20 @@ def setup(world):
 
 
 def on_tick(world):
-    # independent flocks: each drifts its own heading, so the sky holds several
-    # groups instead of one converged mass
-    headings = {}
-    for k in range(1, 5):
-        key = "heading_" + str(k)
-        h = world.store.get(key, 0.0) + world.rng.uniform(-0.06, 0.06)
-        world.store.set(key, h)
-        headings[k] = h
+    # PER-BIRD wandering heading. A shared flock heading made birds ping-pong and
+    # pile at face edges on the cube (a local heading points back across the seam
+    # after a fold); an independent drifting heading per bird just diffuses them
+    # smoothly over the whole planet with no edge-trapping.
     for bird in world.entities("bird"):
-        flock = int(world.get(bird, "flock"))
-        if flock == 0:  # newly spawned: join a random flock
-            flock = 1 + int(world.rng.integers(0, 4))
-            world.set(bird, "flock", float(flock))
+        heading = world.get(bird, "heading")
+        if heading == 0.0:  # unset (new bird): pick one
+            heading = world.rng.uniform(0.1, 6.28)
+        heading += world.rng.uniform(-0.15, 0.15)  # gentle wander
+        world.set(bird, "heading", heading)
         phase = world.get(bird, "phase") + 0.12
         world.set(bird, "phase", phase)
         _x, _y, z = world.pos(bird)
-        # each flock follows its own heading; the world wraps, so no edge handling
-        angle = headings[flock] + world.rng.uniform(-0.4, 0.4)
         target_z = 4.0 + 2.0 * math.sin(phase)
-        world.move(bird, math.cos(angle) * 0.9, math.sin(angle) * 0.9, (target_z - z) * 0.1)
+        world.move(bird, math.cos(heading) * 0.9, math.sin(heading) * 0.9,
+                   (target_z - z) * 0.1)
         world.set(bird, "energy", 100.0)  # decorative: never starves

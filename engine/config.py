@@ -13,6 +13,7 @@ class WorldConfig:
     topology: str = "flat"           # "flat" (walled) | "wrap" (toroidal) | "cube" (6-face sphere)
     initial_capacity: int = 16384    # entity store starting capacity
     max_prop_slots: int = 8          # per-species named float slots
+    field_step_every: int = 1        # step weather/flora every N ticks (perf: >1 on big cubes)
 
     # clock — chosen so a 2,000-tick shadow run covers >= 1 day-night cycle
     # and >= 1 season transition (shadow-horizon rule, docs/architecture.md)

@@ -41,12 +41,14 @@ class InstallBody(BaseModel):
     source: str
 
 
-def create_app(seed: int = 424242, world_size: int = 256, topology: str = "cube") -> FastAPI:
+def create_app(seed: int = 424242, world_size: int = 384, topology: str = "cube") -> FastAPI:
     sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
-    # cube world: six folded faces (a planet), edges join seamlessly. 256/face x6
-    # ≈ the surface area of the old 640 flat world but far cheaper to step & stream.
-    runner = EngineRunner(WorldConfig(seed=seed, size=world_size, topology=topology),
-                          plugin_sources=sources)
+    # cube world: six folded faces (a planet). 384/face is a big, roomy world;
+    # field_step_every=3 keeps it fast (weather/flora change slowly, so stepping
+    # them every 3rd tick is invisible but cuts the dominant cost ~3x).
+    cfg = WorldConfig(seed=seed, size=world_size, topology=topology,
+                      field_step_every=3 if topology == "cube" else 1)
+    runner = EngineRunner(cfg, plugin_sources=sources)
 
     @contextlib.asynccontextmanager
     async def lifespan(app_: FastAPI):

@@ -143,6 +143,10 @@ export function CubeTerrain() {
     }
   });
 
+  // x-ray: when the underground layer is shown, make the crust see-through so
+  // burrowers are visible inside the planet
+  const xray = useStore((s) => s.strata[0]);
+
   if (!faces) return null;
   return (
     <group>
@@ -153,6 +157,9 @@ export function CubeTerrain() {
             roughness={0.95}
             metalness={0}
             side={THREE.DoubleSide}
+            transparent={xray}
+            opacity={xray ? 0.35 : 1}
+            depthWrite={!xray}
           />
         </mesh>
       ))}

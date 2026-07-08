@@ -323,6 +323,15 @@ class WorldAPI:
     def day_frac(self) -> float:
         return self._world.day_frac
 
+    def daylight(self, handle: int) -> float:
+        """Local sun at this entity, in [-1,1] (1 = overhead sun, <0 = night). On
+        the planet this is per-longitude, so a creature can sleep/rest at its own
+        night, be nocturnal, etc. Combine with a danger check to 'wake' when
+        threatened."""
+        row = self._row(handle)
+        s = self._world.store
+        return self._world.daylight_at(int(s.face[row]), float(s.px[row]), float(s.py[row]))
+
     def wrap_delta(self, a: float, b: float) -> float:
         """Shortest signed distance from a to b along one axis. On a wrapped
         (toroidal) world this crosses the seam when that's shorter, so steering

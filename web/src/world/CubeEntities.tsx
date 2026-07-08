@@ -106,10 +106,11 @@ export function CubeEntities() {
         z = prev.z[j] + (z - prev.z[j]) * alpha;
       }
       const ground = heightAtFace(face, x, y) * heightScale;
-      // Stratum bands, mirrored from the flat renderer, applied along the
-      // outward normal: surface hugs ground, sky floats out, underground dips in.
+      // Stratum bands along the outward normal: surface hugs ground, sky floats
+      // out, underground sits in a clear inner shell (well below the crust) so
+      // burrowers are visible through the x-ray terrain.
       const outward =
-        stratum === 1 ? ground + 0.4 : stratum === 2 ? ground + 6 + z : ground - 2;
+        stratum === 1 ? ground + 0.4 : stratum === 2 ? ground + 6 + z : -8;
 
       const k = counters.get(spId) ?? 0;
       if (k >= CAPACITY) continue;

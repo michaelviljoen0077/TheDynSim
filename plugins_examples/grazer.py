@@ -10,7 +10,7 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "grazer", size=1.6, color="#c9a35c", speed=1.8, lifespan=4500,
+        "grazer", size=1.0, color="#c9a35c", speed=1.8, lifespan=4500,
         strata=(world.SURFACE,), props=("gestation",),
     )
     for _ in range(140):
@@ -51,6 +51,12 @@ def on_tick(world):
             d = (dx * dx + dy * dy) ** 0.5 or 1.0
             world.move(grazer, dx / d * 1.7 + world.rng.uniform(-0.3, 0.3),
                        dy / d * 1.7 + world.rng.uniform(-0.3, 0.3))
+            continue
+
+        # sleep cycle: rest at local night (barely move, graze in place). The
+        # predator-flee check above runs first, so danger still wakes them.
+        if world.daylight(grazer) < -0.15:
+            world.move(grazer, world.rng.uniform(-0.2, 0.2), world.rng.uniform(-0.2, 0.2))
             continue
 
         neighbour = world.nearest(grazer, species="grazer", radius=6.0)

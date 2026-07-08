@@ -10,7 +10,7 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "wolf", size=2.2, color="#8a4a4a", speed=1.7, swim_speed=0.9, lifespan=6000,
+        "wolf", size=1.4, color="#8a4a4a", speed=1.9, swim_speed=0.9, lifespan=6000,
         strata=(world.SURFACE,), props=("gestation",),
     )
     # spawn near the herds: on a large sparse world a randomly-placed wolf can
@@ -35,7 +35,7 @@ def on_tick(world):
     pack_size = world.count("wolf")
     pack_cap = max(2, world.count("grazer") // 25)
     for wolf in world.entities("wolf"):
-        energy = world.get(wolf, "energy") - 0.18
+        energy = world.get(wolf, "energy") - 0.15
         x, y, _z = world.pos(wolf)
         f = world.face(wolf)
 
@@ -52,7 +52,9 @@ def on_tick(world):
                        best_dy / 2.0 + world.rng.uniform(-0.3, 0.3))
             continue
 
-        prey = world.nearest(wolf, species="grazer", radius=20.0)
+        # wide scent radius so a pack reliably finds prey on its face; when a face
+        # empties, roam in long strides to migrate toward prey on neighbouring faces
+        prey = world.nearest(wolf, species="grazer", radius=45.0)
         if prey is not None:
             px, py, _pz = world.pos(prey)
             dx, dy = world.wrap_delta(x, px), world.wrap_delta(y, py)  # pursue, seam-aware
@@ -60,11 +62,11 @@ def on_tick(world):
             if d < 1.8:
                 energy += world.attack(prey, 60.0) * 0.8
             else:
-                world.move(wolf, dx / d * 1.6, dy / d * 1.6)
+                world.move(wolf, dx / d * 1.7, dy / d * 1.7)
         else:
-            world.move(wolf, world.rng.uniform(-1.2, 1.2), world.rng.uniform(-1.2, 1.2))
+            world.move(wolf, world.rng.uniform(-2.4, 2.4), world.rng.uniform(-2.4, 2.4))
 
-        world.set(wolf, "energy", min(energy, 260.0))
+        world.set(wolf, "energy", min(energy, 300.0))
 
         gestation = world.get(wolf, "gestation")
         if gestation > 0.0:
@@ -73,6 +75,6 @@ def on_tick(world):
                 pack_size += 1
                 world.spawn("wolf", x + world.rng.uniform(-2, 2), y + world.rng.uniform(-2, 2),
                             stratum=world.SURFACE, energy=90.0, face=world.face(wolf))
-        elif energy > 190.0 and pack_size < pack_cap:
+        elif energy > 175.0 and pack_size < pack_cap:
             world.set(wolf, "gestation", 60.0)
             world.set(wolf, "energy", energy - 55.0)

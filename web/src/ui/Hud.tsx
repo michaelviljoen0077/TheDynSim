@@ -93,11 +93,23 @@ export function Hud() {
 
       <div className="panel panel-clock">
         <div className="clock-line">
-          <span className="glyph">{isDay ? '☀' : '☾'}</span>
-          <span className="clock-time">{clockText(dayFrac)}</span>
-          <span className="season">
-            {SEASONS[(frame?.clock.seasonIndex ?? 0) % SEASONS.length]}
-          </span>
+          {isCube ? (
+            // on the planet, day/night is per-longitude (fixed sun, spinning
+            // world) — a single clock is meaningless, so show the rotation phase
+            <>
+              <span className="glyph">🌐</span>
+              <span className="clock-time">{`${Math.floor(dayFrac * 360)}°`}</span>
+              <span className="season">spin</span>
+            </>
+          ) : (
+            <>
+              <span className="glyph">{isDay ? '☀' : '☾'}</span>
+              <span className="clock-time">{clockText(dayFrac)}</span>
+              <span className="season">
+                {SEASONS[(frame?.clock.seasonIndex ?? 0) % SEASONS.length]}
+              </span>
+            </>
+          )}
         </div>
         <div className="stat-grid">
           <span className="k">temp</span>

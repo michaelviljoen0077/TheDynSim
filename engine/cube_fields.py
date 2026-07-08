@@ -215,6 +215,20 @@ class CubeWeather:
         np.clip(self.soil_moisture, 0.0, 1.0, out=self.soil_moisture)
         np.clip(self.humidity, 0.0, 2.0, out=self.humidity)
 
+    def local_sun(self, face: int, ix: int, iy: int, day_frac: float) -> float:
+        """Local solar illumination at one cell in [-1,1] (same model as step)."""
+        s = self.size
+        ix = min(max(ix, 0), s - 1)
+        iy = min(max(iy, 0), s - 1)
+        theta = 2 * np.pi * day_frac
+        cos_t, sin_t = np.cos(theta), np.sin(theta)
+        nx = float(self._nx[face, ix, iy])
+        ny = float(self._ny[face, ix, iy])
+        nz = float(self._nz[face, ix, iy])
+        rx = nx * cos_t + nz * sin_t
+        rz = -nx * sin_t + nz * cos_t
+        return float(rx * _SUN[0] + ny * _SUN[1] + rz * _SUN[2])
+
     def to_arrays(self) -> dict:
         d = {f"cweather_{n}": getattr(self, n) for n in self.FIELDS}
         d["cweather_wind"] = self.wind

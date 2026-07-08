@@ -65,6 +65,15 @@ class World:
                 self.weather = Weather(config.size)
                 self.flora = Flora.generate(self.rng, config.size, self.terrain)
 
+    def daylight_at(self, face: int, x: float, y: float) -> float:
+        """Local solar illumination at a location, in [-1, 1] (1 = sun overhead,
+        <0 = night). On a cube this is per-longitude (the sun is fixed, the planet
+        spins); on flat/wrap it's the single global day/night. Lets plugins be
+        diurnal/nocturnal or wake in danger."""
+        if self.geom is None:
+            return float(np.sin(2 * np.pi * self.day_frac - np.pi / 2))
+        return self.weather.local_sun(int(face), int(x), int(y), self.day_frac)
+
     # -- clock ---------------------------------------------------------------
 
     @property
@@ -91,8 +100,11 @@ class World:
     # -- tick -----------------------------------------------------------------
 
     def step(self) -> None:
-        self.weather.step(self.rng, self.terrain, self.day_frac, self.season_frac)
-        self.flora.step(self.terrain, self.weather, self.season_frac)
+        # weather/flora change slowly; on big cubes they're the dominant cost, so
+        # step them every field_step_every ticks (deterministic; =1 for flat/wrap)
+        if self.tick % self.config.field_step_every == 0:
+            self.weather.step(self.rng, self.terrain, self.day_frac, self.season_frac)
+            self.flora.step(self.terrain, self.weather, self.season_frac)
         self.spatial.rebuild(self.store)
         for hook in self.tick_hooks:  # PluginHost.on_tick attaches here (Epic 2)
             hook(self)

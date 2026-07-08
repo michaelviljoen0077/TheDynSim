@@ -123,8 +123,11 @@ class World:
         # weather/flora change slowly; on big cubes they're the dominant cost, so
         # step them every field_step_every ticks (deterministic; =1 for flat/wrap)
         if self.tick % self.config.field_step_every == 0:
+            # dt = ticks since the last field update: flora growth is scaled by it
+            # so regrowth keeps pace with per-tick grazing no matter the throttle
+            dt = self.config.field_step_every
             self.weather.step(self.rng, self.terrain, self.day_frac, self.season_frac)
-            self.flora.step(self.terrain, self.weather, self.season_frac)
+            self.flora.step(self.terrain, self.weather, self.season_frac, dt=dt)
         if self.geom is not None:
             self.spatial3d.rebuild(self.store)
         else:

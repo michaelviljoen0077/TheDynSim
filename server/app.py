@@ -47,7 +47,7 @@ def create_app(seed: int = 424242, world_size: int = 384, topology: str = "cube"
     # field_step_every=3 keeps it fast (weather/flora change slowly, so stepping
     # them every 3rd tick is invisible but cuts the dominant cost ~3x).
     cfg = WorldConfig(seed=seed, size=world_size, topology=topology,
-                      field_step_every=3 if topology == "cube" else 1)
+                      field_step_every=6 if topology == "cube" else 1)
     runner = EngineRunner(cfg, plugin_sources=sources)
 
     @contextlib.asynccontextmanager

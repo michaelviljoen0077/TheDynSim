@@ -5,6 +5,7 @@ import { useStore } from '../state/store';
 
 const NIGHT_SKY = new THREE.Color('#16203c');
 const MOON = new THREE.Color('#9fb4de');
+const SPACE = new THREE.Color('#070b18'); // deep-space backdrop for the planet view
 const DAWN_SKY = new THREE.Color('#c97b3f');
 const DAY_SKY = new THREE.Color('#8fc3e8');
 const OVERCAST = new THREE.Color('#5a6470');
@@ -45,6 +46,35 @@ export function SunLight() {
     const frame = useStore.getState().frame;
     const dayFrac = frame?.clock.dayFrac ?? 0.35;
     const precip = Math.min(1, Math.max(0, frame?.weather.precip ?? 0));
+
+    // --- planet lighting: the sun ORBITS the globe, so a day/night terminator
+    // sweeps across the faces. Directional light + centre target does this for
+    // free; dim ambient keeps the night side readable but clearly darker. ---
+    if (isCube) {
+      const moon = moonRef.current;
+      const phi = dayFrac * Math.PI * 2; // one full orbit per day
+      const tilt = 0.35; // slight axial tilt so the poles get some day/night too
+      const rr = size * 1.5;
+      sun.position.set(Math.cos(phi) * rr, tilt * rr, Math.sin(phi) * rr);
+      sun.target.position.set(0, 0, 0);
+      sun.target.updateMatrixWorld();
+      sun.color.copy(SUN_HIGH);
+      sun.intensity = 2.1 * (1 - 0.35 * precip);
+      sun.visible = true;
+      amb.color.copy(AMB_NIGHT);
+      amb.intensity = 0.32; // starlight fill — dark side stays visible, terminator reads
+      if (moon) {
+        moon.position.set(-Math.cos(phi) * rr, tilt * rr, -Math.sin(phi) * rr);
+        moon.target.position.set(0, 0, 0);
+        moon.target.updateMatrixWorld();
+        moon.color.copy(MOON);
+        moon.intensity = 0.35;
+        moon.visible = true;
+      }
+      if (scene.background instanceof THREE.Color) scene.background.copy(SPACE);
+      if (scene.fog) scene.fog.color.copy(SPACE);
+      return;
+    }
 
     // dayFrac 0 = midnight, 0.25 = dawn, 0.5 = noon: sun elevation is a sine.
     const theta = (dayFrac - 0.25) * Math.PI * 2;

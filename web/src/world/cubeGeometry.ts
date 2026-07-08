@@ -88,12 +88,15 @@ export function surfacePoint(
   cubePoint(face, fu, fv, _cube);
   if (spherify > 0) {
     cubeToSphere(_cube, _sph);
-    _sphNorm.copy(_sph).normalize(); // radial normal (before _cube is mutated)
     _cube.lerp(_sph, spherify);
-    // Blend the flat-face normal toward the radial (sphere) normal.
-    outNormal.copy(FACES[face].normal).lerp(_sphNorm, spherify).normalize();
-  } else {
-    outNormal.copy(FACES[face].normal);
   }
-  outPos.copy(_cube).multiplyScalar(radius).addScaledVector(outNormal, outward);
+  // Displace along the RADIAL direction (from the cube centre), not the face
+  // normal. Adjacent faces share the same 3D point at a seam, hence the same
+  // radial vector, so their edges move together and no gap opens as terrain
+  // rises. It also inflates the cube gently toward a planet. _sphNorm reused as
+  // scratch for the radial. (Shading normals are recomputed from the displaced
+  // mesh, so this vector only sets the displacement direction.)
+  _sphNorm.copy(_cube).normalize();
+  outNormal.copy(_sphNorm);
+  outPos.copy(_cube).multiplyScalar(radius).addScaledVector(_sphNorm, outward);
 }

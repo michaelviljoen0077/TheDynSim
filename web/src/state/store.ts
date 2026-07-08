@@ -8,11 +8,15 @@ export interface SpeciesInfo {
   plugin: string;
 }
 
+export type Topology = 'flat' | 'wrap' | 'cube';
+
 export interface SyncInfo {
   protocol: number;
   tick: number;
   epoch: number;
   size: number;
+  topology: Topology;
+  faces: number;
   seaLevel: number;
   heightScale: number;
   species: SpeciesInfo[];
@@ -57,6 +61,8 @@ interface GenesisStore {
   terrainVersion: number;
   /** Terrain heat-map overlay mode (Story 4.4). */
   overlay: Overlay;
+  /** Cube renderer: morph target — true spherifies (globe), false folds a cube. */
+  spherify: boolean;
   /** Generational id of the entity picked in the 3D world, or null (Story 4.4). */
   selectedEntity: number | null;
   /** Code-lab plugin key to focus when opened via a deep-link, or null (Story 4.3). */
@@ -70,6 +76,7 @@ interface GenesisStore {
   toggleStratum: (index: 0 | 1 | 2) => void;
   bumpTerrain: () => void;
   setOverlay: (overlay: Overlay) => void;
+  setSpherify: (spherify: boolean) => void;
   selectEntity: (id: number | null) => void;
   openLab: (key: string | null) => void;
 }
@@ -83,6 +90,7 @@ export const useStore = create<GenesisStore>()((set) => ({
   strata: [false, true, true],
   terrainVersion: 0,
   overlay: 'none',
+  spherify: false,
   selectedEntity: null,
   labFocus: null,
 
@@ -102,6 +110,7 @@ export const useStore = create<GenesisStore>()((set) => ({
     }),
   bumpTerrain: () => set((s) => ({ terrainVersion: s.terrainVersion + 1 })),
   setOverlay: (overlay) => set({ overlay }),
+  setSpherify: (spherify) => set({ spherify }),
   selectEntity: (selectedEntity) => set({ selectedEntity }),
   openLab: (labFocus) => set({ labFocus }),
 }));

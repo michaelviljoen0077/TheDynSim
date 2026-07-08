@@ -44,6 +44,10 @@ export function Hud() {
   const toggleStratum = useStore((s) => s.toggleStratum);
   const overlay = useStore((s) => s.overlay);
   const setOverlay = useStore((s) => s.setOverlay);
+  const topology = useStore((s) => s.sync?.topology);
+  const spherify = useStore((s) => s.spherify);
+  const setSpherify = useStore((s) => s.setSpherify);
+  const isCube = topology === 'cube';
 
   const [tps, setTps] = useState(20);
   const speedTimer = useRef<number | undefined>(undefined);
@@ -168,6 +172,22 @@ export function Hud() {
               {label}
             </button>
           ))}
+        </div>
+        <div className="strata-row">
+          <label className="stratum-toggle" title="World topology">
+            <span className="k">topology</span>
+            <span className="v topology-tag">{isCube ? 'Cube' : 'Flat'}</span>
+          </label>
+          {isCube && (
+            <label className="stratum-toggle" title="Morph the folded cube into a globe">
+              <input
+                type="checkbox"
+                checked={spherify}
+                onChange={(e) => setSpherify(e.target.checked)}
+              />
+              Globe (spherify)
+            </label>
+          )}
         </div>
       </div>
     </div>

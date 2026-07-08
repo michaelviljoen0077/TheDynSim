@@ -1,8 +1,11 @@
 import { useStore, type FrameInfo, type SyncInfo } from '../state/store';
 import { live, type EntityFrame } from './frames';
 
-// Wire protocol v1 (docs/protocol.md). All binary little-endian.
+// Wire protocol v2 (docs/protocol.md). All binary little-endian.
 // Common header: 4 x uint32 = [kind, tick, epoch, n].
+// Terrain/field frames carry a face index; the entity frame carries a per-entity
+// face byte. This (flat/wrap) renderer only shows face 0; the cube renderer folds
+// all six faces (Layer 5).
 
 const HEADER_BYTES = 16;
 const RECONNECT_DELAY_MS = 1000;
@@ -61,18 +64,25 @@ function handleBinary(buf: ArrayBuffer): void {
   else if (kind === 3) decodeField(buf, dv, n);
 }
 
-// kind 1: float32 height[S*S] then uint8 water[S*S].
+// kind 1: uint32 face, float32 height[S*S], uint8 water[S*S].
+// Flat/wrap sends face 0 only; a cube sends all six. We keep every face so the
+// cube renderer can fold them; the flat path still reads face 0 via live.terrain.
 function decodeTerrain(buf: ArrayBuffer, size: number): void {
+  const dv = new DataView(buf);
+  const face = dv.getUint32(HEADER_BYTES, true);
+  if (face < 0 || face >= live.terrains.length) return;
   const cells = size * size;
-  let off = HEADER_BYTES;
+  let off = HEADER_BYTES + 4;
   const height = new Float32Array(buf.slice(off, off + 4 * cells));
   off += 4 * cells;
   const water = new Uint8Array(buf.slice(off, off + cells));
-  live.terrain = { size, height, water };
+  const data = { size, height, water };
+  live.terrains[face] = data;
+  if (face === 0) live.terrain = data;
   useStore.getState().bumpTerrain();
 }
 
-// kind 2: uint32 id, f32 x, f32 y, f32 z, f32 energy, u16 species, u8 stratum (each [N]).
+// kind 2: uint32 id, f32 x/y/z/energy, u16 species, u8 stratum, u8 face (each [N]).
 function decodeEntities(buf: ArrayBuffer, tick: number, epoch: number, n: number): void {
   let off = HEADER_BYTES;
   const id = new Uint32Array(buf.slice(off, off + 4 * n));
@@ -88,6 +98,10 @@ function decodeEntities(buf: ArrayBuffer, tick: number, epoch: number, n: number
   const species = new Uint16Array(buf.slice(off, off + 2 * n));
   off += 2 * n;
   const stratum = new Uint8Array(buf.slice(off, off + n));
+  off += n;
+  // Per-entity cube face (0 on flat/wrap). Kept so the cube renderer can place
+  // each instance on its face and snap interpolation across a face change.
+  const face = new Uint8Array(buf.slice(off, off + n));
 
   const now = performance.now();
   // Never interpolate across an epoch boundary (reset/rollback teleports).
@@ -107,7 +121,7 @@ function decodeEntities(buf: ArrayBuffer, tick: number, epoch: number, n: number
   }
 
   const frame: EntityFrame = {
-    tick, epoch, n, id, x, y, z, energy, species, stratum, prevIndex, recvTime: now,
+    tick, epoch, n, id, x, y, z, energy, species, stratum, face, prevIndex, recvTime: now,
   };
   live.prev = prev;
   live.curr = frame;
@@ -119,11 +133,16 @@ function decodeEntities(buf: ArrayBuffer, tick: number, epoch: number, n: number
   useStore.getState().setSpeciesCounts(counts);
 }
 
-// kind 3: uint32 fieldId after the header, then uint8 values[S*S].
+// kind 3: uint32 fieldId, uint32 face, then uint8 values[S*S].
+// We keep flora (fieldId 0) for every face; the cube renderer tints all six,
+// the flat path reads live.flora (face 0). Other fields are unused for now.
 function decodeField(buf: ArrayBuffer, dv: DataView, size: number): void {
   const fieldId = dv.getUint32(HEADER_BYTES, true);
-  if (fieldId !== 0) return; // only flora density is rendered for now
-  const off = HEADER_BYTES + 4;
-  live.flora = new Uint8Array(buf.slice(off, off + size * size));
+  const face = dv.getUint32(HEADER_BYTES + 4, true);
+  if (fieldId !== 0 || face < 0 || face >= live.floras.length) return;
+  const off = HEADER_BYTES + 8;
+  const values = new Uint8Array(buf.slice(off, off + size * size));
+  live.floras[face] = values;
+  if (face === 0) live.flora = values;
   live.floraVersion++;
 }

@@ -41,10 +41,11 @@ class InstallBody(BaseModel):
     source: str
 
 
-def create_app(seed: int = 424242, world_size: int = 640) -> FastAPI:
+def create_app(seed: int = 424242, world_size: int = 256) -> FastAPI:
     sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
-    # toroidal world: edges join, so creatures never pile up against a wall
-    runner = EngineRunner(WorldConfig(seed=seed, size=world_size, topology="wrap"),
+    # cube world: six folded faces (a planet), edges join seamlessly. 256/face x6
+    # ≈ the surface area of the old 640 flat world but far cheaper to step & stream.
+    runner = EngineRunner(WorldConfig(seed=seed, size=world_size, topology="cube"),
                           plugin_sources=sources)
 
     @contextlib.asynccontextmanager

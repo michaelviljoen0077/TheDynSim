@@ -215,6 +215,11 @@
   accent-color: #ffb454;
   margin: 0;
 }
+.topology-tag {
+  margin-left: auto;
+  color: #4be1ff;
+  letter-spacing: 0.08em;
+}
 
 .overlay-row {
   display: flex;

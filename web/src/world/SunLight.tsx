@@ -25,15 +25,18 @@ export function SunLight() {
   const ambRef = useRef<THREE.AmbientLight>(null);
   const scene = useThree((s) => s.scene);
   const size = useStore((s) => s.sync?.size ?? 128);
+  const isCube = useStore((s) => s.sync?.topology === 'cube');
 
   useEffect(() => {
     scene.background = new THREE.Color(NIGHT_SKY);
-    scene.fog = new THREE.FogExp2(NIGHT_SKY.getHex(), 0.9 / size);
+    // Flat world hugs the ground under dense fog; the cube/globe is viewed from
+    // orbit, so fog stays light enough to keep the whole sphere visible.
+    scene.fog = new THREE.FogExp2(NIGHT_SKY.getHex(), (isCube ? 0.12 : 0.9) / size);
     return () => {
       scene.background = null;
       scene.fog = null;
     };
-  }, [scene, size]);
+  }, [scene, size, isCube]);
 
   useFrame(() => {
     const sun = sunRef.current;
@@ -49,7 +52,8 @@ export function SunLight() {
     const daylight = smoothstep(elev, -0.08, 0.3);
     const horizonGlow = Math.max(0, 1 - Math.abs(elev) / 0.28);
 
-    const c = (size - 1) / 2;
+    // Flat world is centred at (c,0,c); the cube/globe is centred at the origin.
+    const c = isCube ? 0 : (size - 1) / 2;
     const r = size * 1.2;
     sun.position.set(c + Math.cos(theta) * r, elev * r, c + 0.35 * r);
     sun.target.position.set(c, 0, c);

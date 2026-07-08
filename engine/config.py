@@ -18,7 +18,7 @@ class WorldConfig:
     # calendar: 600 ticks/day, 30 days/month, 4 seasons x 90 days = 360-day year.
     # (Long enough that day/month/year read believably; seasons are slow — the
     # "elliptical orbit" hand-wave.)
-    ticks_per_day: int = 1200
+    ticks_per_day: int = 600
     days_per_month: int = 30
     days_per_season: int = 90
     seasons_per_year: int = 4

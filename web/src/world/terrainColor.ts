@@ -8,12 +8,12 @@ import type { Overlay } from '../state/store';
 
 const C_WATERBED = new THREE.Color('#155084');
 const C_DEEP = new THREE.Color('#092b4d');
-const C_SAND = new THREE.Color('#c8b47e');
-const C_GRASS_DRY = new THREE.Color('#8a7f4a');
-const C_GRASS = new THREE.Color('#3f8f4d');
-const C_ROCK = new THREE.Color('#7d7f84');
+const C_SAND = new THREE.Color('#c8b47e');   // beaches (low, near water)
+const C_SOIL = new THREE.Color('#8a6b46');   // BARREN dry earth (no flora)
+const C_GRASS = new THREE.Color('#3f8f4d');  // lush green (full flora)
+const C_ROCK = new THREE.Color('#7d7f84');   // mountains
 const C_PEAK = new THREE.Color('#b8bcc4');
-const tmpGrass = new THREE.Color();
+const tmpGround = new THREE.Color();
 
 export function smoothstep(x: number, a: number, b: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -54,14 +54,18 @@ export function cellColor(
   } else if (water) {
     out.copy(C_WATERBED).lerp(C_DEEP, smoothstep(seaLevel - h, 0, 0.25));
   } else {
-    const f = flora ?? 0.45;
-    const grass = tmpGrass.copy(C_GRASS_DRY).lerp(C_GRASS, f);
+    // Barren by default; green ONLY where flora actually grows. Beaches stay
+    // sand and mountains stay grey regardless (those are elevation, not flora).
+    // Flora is amplified a little so vegetated ground reads clearly green even at
+    // the modest densities grazed land settles at.
+    const f = Math.min(1, (flora ?? 0) * 1.8);
+    const ground = tmpGround.copy(C_SOIL).lerp(C_GRASS, f);
     if (h < seaLevel + 0.03) {
       out.copy(C_SAND);
     } else if (h < 0.6) {
-      out.copy(C_SAND).lerp(grass, smoothstep(h, seaLevel + 0.03, seaLevel + 0.12));
+      out.copy(C_SAND).lerp(ground, smoothstep(h, seaLevel + 0.03, seaLevel + 0.12));
     } else if (h < 0.78) {
-      out.copy(grass).lerp(C_ROCK, smoothstep(h, 0.6, 0.78));
+      out.copy(ground).lerp(C_ROCK, smoothstep(h, 0.6, 0.78));
     } else {
       out.copy(C_ROCK).lerp(C_PEAK, smoothstep(h, 0.78, 0.95));
     }

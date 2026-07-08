@@ -143,7 +143,7 @@ class SpeciesRegistry:
 class EntityStore:
     ARRAY_FIELDS = (
         "alive", "generation", "species_id", "plugin_id",
-        "px", "py", "pz", "stratum", "energy", "age", "props",
+        "px", "py", "pz", "stratum", "face", "energy", "age", "props",
     )
 
     def __init__(self, capacity: int, max_prop_slots: int) -> None:
@@ -157,6 +157,7 @@ class EntityStore:
         self.py = np.zeros(capacity, dtype=np.float32)
         self.pz = np.zeros(capacity, dtype=np.float32)
         self.stratum = np.full(capacity, SURFACE, dtype=np.uint8)
+        self.face = np.zeros(capacity, dtype=np.uint8)   # cube face (0 for flat/wrap)
         self.energy = np.zeros(capacity, dtype=np.float32)
         self.age = np.zeros(capacity, dtype=np.uint32)
         self.props = np.zeros((capacity, max_prop_slots), dtype=np.float32)
@@ -187,6 +188,7 @@ class EntityStore:
         stratum: int,
         energy: float,
         plugin_id: int = -1,
+        face: int = 0,
     ) -> int:
         if not self.freelist:
             self._grow()
@@ -196,6 +198,7 @@ class EntityStore:
         self.plugin_id[i] = plugin_id
         self.px[i], self.py[i], self.pz[i] = x, y, z
         self.stratum[i] = stratum
+        self.face[i] = face
         self.energy[i] = energy
         self.age[i] = 0
         self.props[i, :] = 0.0

@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass, field
 class WorldConfig:
     seed: int = 424242
     size: int = 256                  # world is size x size columns
-    topology: str = "flat"           # "flat" (clamped edges) | "wrap" (toroidal: edges join)
+    topology: str = "flat"           # "flat" (walled) | "wrap" (toroidal) | "cube" (6-face sphere)
     initial_capacity: int = 16384    # entity store starting capacity
     max_prop_slots: int = 8          # per-species named float slots
 
@@ -46,6 +46,10 @@ class WorldConfig:
     @property
     def wrap(self) -> bool:
         return self.topology == "wrap"
+
+    @property
+    def cube(self) -> bool:
+        return self.topology == "cube"
 
     @property
     def ticks_per_season(self) -> int:

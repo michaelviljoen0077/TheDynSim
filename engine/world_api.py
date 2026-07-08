@@ -140,7 +140,7 @@ class WorldAPI:
         )
 
     def spawn(self, species: str, x: float, y: float, stratum: int = SURFACE,
-              energy: float = 100.0, z: float = 0.0) -> None:
+              energy: float = 100.0, z: float = 0.0, face: int = 0) -> None:
         """Spawn an owned entity. Hitting a population/spawn-rate cap is an
         ENVIRONMENTAL limit, not a programming error: the spawn is silently
         dropped and counted in `spawn_drops` — it must never abort the tick or
@@ -156,11 +156,16 @@ class WorldAPI:
             self.spawn_drops += 1
             return
         self._world.commands.spawn(sp.id, float(x), float(y), float(z), int(stratum),
-                                   float(energy), self._plugin_id)
+                                   float(energy), self._plugin_id, int(face))
 
     def remove(self, handle: int) -> None:
         self._owned_row(handle)
         self._world.commands.remove(handle)
+
+    def face(self, handle: int) -> int:
+        """Cube face this entity is on (0 for flat/wrap worlds). Pass to spawn()
+        to place offspring on the same face as the parent."""
+        return int(self._world.store.face[self._row(handle)])
 
     # -- queries (tick-start state) ---------------------------------------------
 
@@ -197,7 +202,7 @@ class WorldAPI:
         sp_id = self._species(species).id if species is not None else None
         j = self._world.spatial.nearest(
             s, float(s.px[row]), float(s.py[row]), float(radius),
-            int(s.stratum[row]), species_id=sp_id, exclude_row=row,
+            int(s.stratum[row]), species_id=sp_id, exclude_row=row, face=int(s.face[row]),
         )
         if j < 0:
             return None
@@ -209,7 +214,7 @@ class WorldAPI:
         sp_id = self._species(species).id if species is not None else None
         rows = self._world.spatial.within(
             s, float(s.px[row]), float(s.py[row]), float(radius),
-            int(s.stratum[row]), species_id=sp_id, exclude_row=row,
+            int(s.stratum[row]), species_id=sp_id, exclude_row=row, face=int(s.face[row]),
         )
         return [(j << GEN_BITS) | int(s.generation[j]) for j in rows]
 

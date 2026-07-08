@@ -20,14 +20,16 @@ from engine.entities import GEN_BITS, EntityStore
 
 
 class SpatialHash:
-    def __init__(self, world_size: float, cell: float = 8.0, wrap: bool = False) -> None:
+    def __init__(self, world_size: float, cell: float = 8.0, wrap: bool = False,
+                 faced: bool = False) -> None:
         self.world_size = world_size
         self.cell = cell
         self.wrap = wrap                       # toroidal topology: cells/distances wrap
+        self.faced = faced                     # cube: bucket & query per face (face-local)
         self.ncell = max(1, int(world_size / cell))
-        # (stratum, species_id) -> {(cx, cy) -> [row, ...]}
-        self.buckets: dict[tuple[int, int], dict[tuple[int, int], list[int]]] = {}
-        self._layers_by_stratum: dict[int, list[dict]] = {}
+        # (face, stratum, species_id) -> {(cx, cy) -> [row, ...]}  (face=0 unless cube)
+        self.buckets: dict[tuple[int, int, int], dict[tuple[int, int], list[int]]] = {}
+        self._layers_by_fs: dict[tuple[int, int], list[dict]] = {}
         self.xs: list[float] = []
         self.ys: list[float] = []
 
@@ -48,7 +50,7 @@ class SpatialHash:
         # tick-start position cache: plain Python floats, indexed by row
         self.xs = store.px.tolist()
         self.ys = store.py.tolist()
-        buckets: dict[tuple[int, int], dict[tuple[int, int], list[int]]] = {}
+        buckets: dict[tuple[int, int, int], dict[tuple[int, int], list[int]]] = {}
         idx = np.flatnonzero(store.alive)
         if idx.size:
             inv = 1.0 / self.cell
@@ -56,24 +58,26 @@ class SpatialHash:
             cy = (store.py[idx] * inv).astype(np.int32).tolist()
             strata = store.stratum[idx].tolist()
             species = store.species_id[idx].tolist()
-            for i, sx, sy, st, sp in zip(idx.tolist(), cx, cy, strata, species, strict=True):
-                layer = buckets.setdefault((st, sp), {})
+            faces = store.face[idx].tolist() if self.faced else [0] * idx.size
+            for i, sx, sy, st, sp, fc in zip(idx.tolist(), cx, cy, strata, species, faces,
+                                             strict=True):
+                layer = buckets.setdefault((fc, st, sp), {})
                 cell_rows = layer.setdefault((sx, sy), [])
                 cell_rows.append(i)
         self.buckets = buckets
-        layers: dict[int, list[dict]] = {}
-        # Sort by (stratum, species_id) so the species-none `within`/`nearest`
-        # layer order is a stable function of species id — never of which species
-        # happens to hold the lowest alive row (which unrelated plugins can shift).
-        for st, _sp in sorted(buckets.keys()):
-            layers.setdefault(st, []).append(buckets[(st, _sp)])
-        self._layers_by_stratum = layers
+        layers: dict[tuple[int, int], list[dict]] = {}
+        # Sort by (face, stratum, species_id) so the species-none query layer order
+        # is a stable function of species id — never of which species happens to
+        # hold the lowest alive row (which unrelated plugins can shift).
+        for fc, st, _sp in sorted(buckets.keys()):
+            layers.setdefault((fc, st), []).append(buckets[(fc, st, _sp)])
+        self._layers_by_fs = layers
 
-    def _target_layers(self, stratum: int, species_id: int | None) -> list[dict]:
+    def _target_layers(self, stratum: int, species_id: int | None, face: int) -> list[dict]:
         if species_id is not None:
-            layer = self.buckets.get((stratum, species_id))
+            layer = self.buckets.get((face, stratum, species_id))
             return [layer] if layer else []
-        return self._layers_by_stratum.get(stratum, [])
+        return self._layers_by_fs.get((face, stratum), [])
 
     # -- scalar path (pure Python; the plugin hot path) ----------------------
 
@@ -85,9 +89,10 @@ class SpatialHash:
         stratum: int,
         species_id: int | None = None,
         exclude_row: int = -1,
+        face: int = 0,
     ) -> list[int]:
         """Row indices within radius, deterministic order (species/cell-major, insertion order)."""
-        layers = self._target_layers(stratum, species_id)
+        layers = self._target_layers(stratum, species_id, face)
         if not layers:
             return []
         r2 = radius * radius
@@ -119,9 +124,10 @@ class SpatialHash:
         stratum: int,
         species_id: int | None = None,
         exclude_row: int = -1,
+        face: int = 0,
     ) -> int:
         """Nearest row index within radius, or -1. Ties break to lowest row (deterministic)."""
-        layers = self._target_layers(stratum, species_id)
+        layers = self._target_layers(stratum, species_id, face)
         if not layers:
             return -1
         best, best_d = -1, radius * radius + 1e-9

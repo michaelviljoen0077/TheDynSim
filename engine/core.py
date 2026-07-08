@@ -12,6 +12,7 @@ import numpy as np
 
 from engine.commands import CommandBuffer
 from engine.config import WorldConfig
+from engine.cube import CubeGeometry
 from engine.entities import SKY, SURFACE, UNDERGROUND, EntityStore, SpeciesRegistry, make_handle
 from engine.fields import Flora, Terrain, Weather
 from engine.spatial import SpatialHash
@@ -32,7 +33,8 @@ class World:
         self.registry = SpeciesRegistry(config.max_prop_slots)
         self.store = EntityStore(config.initial_capacity, config.max_prop_slots)
         self.commands = CommandBuffer()
-        self.spatial = SpatialHash(float(config.size), wrap=config.wrap)
+        self.geom = CubeGeometry(config.size) if config.cube else None
+        self.spatial = SpatialHash(float(config.size), wrap=config.wrap, faced=config.cube)
         # plugin machinery placeholders (Epic 2) — snapshot-complete from day one
         self.plugin_rngs: dict[str, np.random.Generator] = {}
         self.plugin_stores: dict[str, dict[str, float | int | str]] = {}
@@ -88,7 +90,7 @@ class World:
                             flora=self.flora.density, speeds=self.registry.speeds_array(),
                             water=self.terrain.water_mask,
                             swim_speeds=self.registry.swim_speeds_array(),
-                            wrap=self.config.wrap)
+                            wrap=self.config.wrap, geom=self.geom)
         self._water_effects()
         self._crowding_stress()
         self._death_sweep()

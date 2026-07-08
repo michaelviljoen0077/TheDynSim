@@ -30,8 +30,8 @@ class CommandBuffer:
     flora_bites: list[tuple[int, int, float]] = field(default_factory=list)
 
     def spawn(self, species_id: int, x: float, y: float, z: float,
-              stratum: int, energy: float, plugin_id: int = -1) -> None:
-        self.ops.append((OP_SPAWN, species_id, x, y, z, stratum, energy, plugin_id))
+              stratum: int, energy: float, plugin_id: int = -1, face: int = 0) -> None:
+        self.ops.append((OP_SPAWN, species_id, x, y, z, stratum, energy, plugin_id, face))
 
     def remove(self, handle: int) -> None:
         self.ops.append((OP_REMOVE, handle))
@@ -67,12 +67,13 @@ class CommandBuffer:
               speeds: np.ndarray | None = None,
               water: np.ndarray | None = None,
               swim_speeds: np.ndarray | None = None,
-              wrap: bool = False) -> None:
+              wrap: bool = False,
+              geom=None) -> None:
         """Apply ops in submission order (deterministic).
 
-        Topology: when `wrap`, positions are taken modulo world_max (a toroidal
-        world — edges join, no walls); otherwise clamped to [0, world_max - 1]
-        (the terrain's last vertex, so entities stay on the rendered map).
+        Topology: `geom` (a CubeGeometry) folds edge-crossers onto neighbour
+        faces; else `wrap` takes positions modulo world_max (toroidal); else
+        positions clamp to [0, world_max - 1] (walled).
 
         `speeds` (per-species max distance/tick) caps each entity's net
         displacement this tick — the engine-enforced speed limit, so no plugin
@@ -93,15 +94,18 @@ class CommandBuffer:
         for op in self.ops:
             kind = op[0]
             if kind == OP_SPAWN:
-                _, species_id, x, y, z, stratum, energy, plugin_id = op
-                if wrap:
+                _, species_id, x, y, z, stratum, energy, plugin_id, face = op
+                if geom is not None:
+                    x = min(max(x, 0.0), world_max - 0.01)
+                    y = min(max(y, 0.0), world_max - 0.01)
+                elif wrap:
                     x = min(x % world_max, world_max - 0.01)
                     y = min(y % world_max, world_max - 0.01)
                 else:
                     x = min(max(x, 0.0), hi)
                     y = min(max(y, 0.0), hi)
                 self.spawned_handles.append(
-                    store.spawn(species_id, x, y, z, stratum, energy, plugin_id)
+                    store.spawn(species_id, x, y, z, stratum, energy, plugin_id, face)
                 )
                 if store.px is not xs:
                     # the spawn grew the store: every array was reallocated, so the
@@ -160,11 +164,27 @@ class CommandBuffer:
                     scale = np.where(over, limit / np.maximum(dist, 1e-9), 1.0)
                     vals[:, 0] = xs[rows] + dx * scale
                     vals[:, 1] = ys[rows] + dy * scale
-            # finalize topology once: wrap (toroidal) or clamp (walled).
-            # guard the upper edge: float32 can round mod(x, size) up to exactly
-            # `size` (e.g. 639.9999 -> 640.0), which then indexes out of bounds
-            if wrap:
-                top = np.float32(world_max) - np.float32(0.01)
+            # finalize topology once. guard the upper edge: float32 can round a
+            # coord up to exactly `size` (e.g. 639.9999 -> 640.0), out of bounds.
+            top = np.float32(world_max) - np.float32(0.01)
+            if geom is not None:
+                # cube: in-face moves keep their face; edge-crossers (rare) fold
+                # onto a neighbour face via the geometry, using the speed-clamped
+                # net displacement from their pre-move position
+                fdx = vals[:, 0] - xs[rows]
+                fdy = vals[:, 1] - ys[rows]
+                oob = np.flatnonzero((vals[:, 0] < 0) | (vals[:, 0] >= world_max)
+                                     | (vals[:, 1] < 0) | (vals[:, 1] >= world_max))
+                for k in oob.tolist():
+                    i = int(rows[k])
+                    nf, nx, ny = geom.step(int(store.face[i]), float(xs[i]), float(ys[i]),
+                                           float(fdx[k]), float(fdy[k]))
+                    store.face[i] = nf
+                    vals[k, 0] = nx
+                    vals[k, 1] = ny
+                np.clip(vals[:, 0], 0.0, top, out=vals[:, 0])
+                np.clip(vals[:, 1], 0.0, top, out=vals[:, 1])
+            elif wrap:
                 vals[:, 0] = np.minimum(np.mod(vals[:, 0], world_max), top)
                 vals[:, 1] = np.minimum(np.mod(vals[:, 1], world_max), top)
             else:

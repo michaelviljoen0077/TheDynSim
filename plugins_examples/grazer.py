@@ -1,4 +1,6 @@
-"""Grazer: surface herbivore. Eats flora, wanders, disperses, starves, reproduces."""
+"""Grazer: surface herbivore. Grazes, roams to fresh pasture, flees, reproduces."""
+
+import math
 
 PLUGIN_META = {
     "name": "grazer_herd",
@@ -11,7 +13,7 @@ PLUGIN_META = {
 def setup(world):
     world.register_species(
         "grazer", size=0.7, color="#c9a35c", speed=0.9, lifespan=4500,
-        strata=(world.SURFACE,), props=("gestation",),
+        strata=(world.SURFACE,), props=("gestation", "heading"),
     )
     for _ in range(140):
         x, y = world.random_surface_point()
@@ -63,9 +65,21 @@ def on_tick(world):
             world.move(grazer, -dx * 0.6 + world.rng.uniform(-0.5, 0.5),
                        -dy * 0.6 + world.rng.uniform(-0.5, 0.5))
             continue
-        roam = 1.0 if world.flora_at(x, y, f) < 0.1 else 0.5
-        world.move(grazer, world.rng.uniform(-1, 1) * roam,
-                   world.rng.uniform(-1, 1) * roam)
+
+        # ROAM with a persistent, slowly-drifting heading so a grazer actually
+        # travels and the herd expands across the land, instead of jittering in
+        # place. It lingers (slow) on rich pasture and strikes out (fast) once the
+        # grass here is grazed down — natural foraging dispersal.
+        hd = world.get(grazer, "heading")
+        if hd == 0.0:
+            hd = world.rng.uniform(0.1, 6.28)
+        hd += world.rng.uniform(-0.25, 0.25)
+        # look ahead: if we'd wander into water, turn away (avoid drowning)
+        if world.water_at(x + math.cos(hd) * 3.0, y + math.sin(hd) * 3.0, f):
+            hd += 2.2
+        world.set(grazer, "heading", hd)
+        roam = 0.9 if world.flora_at(x, y, f) < 0.12 else 0.35
+        world.move(grazer, math.cos(hd) * roam, math.sin(hd) * roam)
 
         # Reproduction takes TIME and happens ONE pregnancy at a time (the
         # gestation prop is a single countdown — a pregnant grazer can't start

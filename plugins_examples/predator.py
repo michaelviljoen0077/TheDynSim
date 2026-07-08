@@ -1,4 +1,6 @@
-"""Wolf: surface predator. Hunts grazers via engine-mediated attack, starves, reproduces."""
+"""Wolf: surface predator. Hunts grazers, patrols to find prey, starves, breeds."""
+
+import math
 
 PLUGIN_META = {
     "name": "wolf_pack",
@@ -11,7 +13,7 @@ PLUGIN_META = {
 def setup(world):
     world.register_species(
         "wolf", size=0.9, color="#8a4a4a", speed=1.05, swim_speed=0.6, lifespan=6000,
-        strata=(world.SURFACE,), props=("gestation",),
+        strata=(world.SURFACE,), props=("gestation", "heading"),
     )
     # spawn near the herds: on a large sparse world a randomly-placed wolf can
     # starve before ever finding prey
@@ -62,8 +64,19 @@ def on_tick(world):
             else:
                 dx, dy = world.direction_to(wolf, prey)
                 world.move(wolf, dx, dy)
+                world.set(wolf, "heading", math.atan2(dy, dx))  # remember the chase dir
         else:
-            world.move(wolf, world.rng.uniform(-1.0, 1.0), world.rng.uniform(-1.0, 1.0))
+            # no prey in range: PATROL along a persistent, drifting heading so the
+            # pack ranges out to new hunting grounds instead of milling in place
+            # and starving. (Keeps the direction of the last chase, then wanders.)
+            hd = world.get(wolf, "heading")
+            if hd == 0.0:
+                hd = world.rng.uniform(0.1, 6.28)
+            hd += world.rng.uniform(-0.12, 0.12)
+            if world.water_at(x + math.cos(hd) * 3.0, y + math.sin(hd) * 3.0, f):
+                hd += 2.2  # steer around water while patrolling
+            world.set(wolf, "heading", hd)
+            world.move(wolf, math.cos(hd), math.sin(hd))
 
         world.set(wolf, "energy", min(energy, 300.0))
 

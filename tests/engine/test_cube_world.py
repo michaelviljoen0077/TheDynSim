@@ -143,7 +143,10 @@ def test_example_food_chain_runs_on_a_cube():
 
     from engine.plugin_host import PluginHost
     examples = Path(__file__).resolve().parents[2] / "plugins_examples"
-    w = World(WorldConfig(seed=3, size=64, topology="cube", initial_capacity=8192))
+    # representative of the server config (roomy world + field throttle); the
+    # tuned ecology is designed for this scale, not a cramped 64-cell patch
+    w = World(WorldConfig(seed=3, size=96, topology="cube", initial_capacity=16384,
+                          field_step_every=4))
     host = PluginHost(w)
     for p in ("grazer.py", "predator.py", "birds.py"):
         host.install((examples / p).read_text())

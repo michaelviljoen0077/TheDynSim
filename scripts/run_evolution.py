@@ -29,49 +29,65 @@ def main() -> None:
         print("Ollama unreachable or model missing — aborting")
         sys.exit(1)
 
+    settle = 800
+    live_between = 3000  # let each decision actually play out before the next cycle
     sources = [(PLUGINS / n).read_text() for n in ("grazer.py", "predator.py", "birds.py")]
-    runner = EngineRunner(WorldConfig(seed=1337, size=192, initial_capacity=8192),
-                          plugin_sources=sources)
-    print("settling the base ecosystem (400 ticks)...")
-    runner.world.run(400)
+    runner = EngineRunner(
+        WorldConfig(seed=1337, size=256, topology="cube",
+                    initial_capacity=32768, field_step_every=6),
+        plugin_sources=sources,
+    )
+    print(f"settling the base ecosystem ({settle} ticks)...")
+    runner.world.run(settle)
 
     notebook = Notebook(db_path)
-    notebook.start_run(1337, runner.config.to_json(), notes="live evolution demo")
+    notebook.reset_all()
+    notebook.start_run(1337, runner.config.to_json(), notes="long evolution test")
     orch = Orchestrator(
         runner, notebook, provider,
-        GovernorConfig(n_candidates=2, shadow_ticks=900,
+        GovernorConfig(n_candidates=3, shadow_ticks=1200,
                        promotion_threshold=0.3,
-                       budgets=Budgets(wall_s=120.0, rss_mb=1024.0, tick_ms=250.0)),
+                       budgets=Budgets(wall_s=150.0, rss_mb=1200.0, tick_ms=250.0)),
     )
 
+    from engine.reporter import build_report
+
+    def snapshot_pops():
+        r = build_report(runner.world)
+        return {n: p["total"] for n, p in r["populations"].items() if p["total"] or p["plugin"]}
+
     for k in range(n_cycles):
-        print(f"\n=== evolution cycle {k + 1}/{n_cycles} (provider {provider.name}) ===")
+        print(f"\n{'=' * 70}\nCYCLE {k + 1}/{n_cycles}  (tick {runner.world.tick})  pops={snapshot_pops()}")
         decision = orch.run_cycle()
         cycle = notebook.cycles(limit=1)[0]
-        print(f"decision: {decision}   tokens in/out: {cycle['tokens_in']}/{cycle['tokens_out']}")
+        print(f"decision: {decision}  tokens {cycle['tokens_in']}/{cycle['tokens_out']}")
         for cand in notebook.candidates_for(cycle["id"]):
             meta = cand["meta"]
-            print(f"\n  [{cand['label']}] fate={cand['fate']} fitness={cand['fitness']:.3f}")
-            print(f"    hypothesis: {meta.get('hypothesis', '')[:160]}")
-            if cand["fitness_breakdown"]:
-                print(f"    breakdown: {json.dumps(cand['fitness_breakdown'].get('breakdown', {}))}")
+            line = f"  [{cand['label']}] {cand['fate']} fit={cand['fitness']:.2f}"
             if cand["fate"] == "rejected_validation":
-                print(f"    reasons: {[v['code'] for v in cand['validation'].get('errors', [])]}")
-            if cand["fate"] == "rejected_shadow":
-                print(f"    reason: {cand['shadow_metrics'].get('reason', '')}")
-            if cand["fate"] == "promoted":
-                print("    --- promoted plugin source ---")
-                print("    " + "\n    ".join(cand["source"].splitlines()[:40]))
-        if decision == "promoted":
-            print("\nletting the promotion live for 300 ticks...")
-            runner.world.run(300)
+                line += f"  reasons={[v['code'] for v in cand['validation'].get('errors', [])]}"
+            elif cand["fate"] == "rejected_shadow":
+                line += f"  ({cand['shadow_metrics'].get('reason', '')[:70]})"
+            print(line)
+            print(f"      species={meta.get('species')}  hyp: {meta.get('hypothesis', '')[:110]}")
+        # measure the PREVIOUS promotion's real outcome (governor does this next cycle)
+        outc = notebook.db.execute(
+            "SELECT plugin_name, verdict FROM outcomes ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        if outc:
+            print(f"  last-promotion outcome: {outc['plugin_name']} -> {outc['verdict']}")
+        if runner.world.extinct:
+            print(f"  EXTINCT so far: {[e['species'] for e in runner.world.extinct]}")
+        print(f"  letting it live {live_between} ticks...")
+        runner.world.run(live_between)
 
-    print("\nfinal populations:")
-    from engine.reporter import build_report
+    print(f"\n{'=' * 70}\nFINAL @ tick {runner.world.tick}")
     report = build_report(runner.world)
     for name, p in report["populations"].items():
-        print(f"  {name:14s} {p['total']:5d}  (plugin {p['plugin']})")
+        print(f"  {name:16s} {p['total']:5d}  (plugin {p['plugin']}, status live)")
     print(f"shannon diversity: {report['shannon_diversity']}")
+    print(f"extinct: {[e['species'] for e in runner.world.extinct]}")
+    print(f"live plugins: {[m['name'] for m in runner.world.plugin_manifest if m['status'] == 'live']}")
     print(f"deaths: {json.dumps(report['deaths_by_cause'])}")
 
 

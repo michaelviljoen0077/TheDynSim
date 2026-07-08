@@ -98,7 +98,23 @@ class PluginHost:
         meta = result.meta or {}
         name = meta["name"]
         if name in self.plugins:
-            raise PluginInstallError([{"code": "duplicate-plugin", "message": f"plugin {name!r} already installed", "line": 0}])
+            # a dead plugin (retired/quarantined/extinct) with no living entities
+            # is reclaimable — the governor naturally re-uses names to revive a
+            # niche, and blocking that wasted ~40% of cycles. A LIVE plugin still
+            # can't be duplicated (mutate it via lineage_parent instead).
+            existing = self.plugins[name]
+            existing_alive = sum(
+                int(self.world.store.alive_indices(sp.id).size)
+                for s in existing.meta.get("species", [])
+                if (sp := self.world.registry.by_name.get(s)) is not None
+            )
+            if existing.status == "live" or existing_alive > 0:
+                raise PluginInstallError([{"code": "duplicate-plugin",
+                                           "message": f"plugin {name!r} is already installed and live",
+                                           "line": 0}])
+            del self.plugins[name]
+            if name in self.order:
+                self.order.remove(name)
 
         # lineage replacement (refinement, not addition): a candidate whose
         # lineage_parent names an installed plugin REPLACES it — the parent is

@@ -84,3 +84,17 @@ def test_identical_to_control_scores_near_zero():
     assert isinstance(score, FitnessScore)
     assert abs(score.breakdown["diversity"]) < 1e-9
     assert abs(score.breakdown["stability"]) < 1e-9
+
+
+def test_prey_crash_penalises_exterminators():
+    ctrl = metrics({"grazer": 200, "wolf": 10},
+                   samples=flat_samples({"grazer": 200, "wolf": 10}))
+    # a new predator that crashes grazers to 20% of control (collapse in progress)
+    cand = metrics({"grazer": 40, "wolf": 10, "hawk": 15},
+                   samples=flat_samples({"grazer": 40, "wolf": 10, "hawk": 15}))
+    score = score_candidate(cand, ctrl, candidate_species=["hawk"])
+    assert score.breakdown.get("prey_crash", 0.0) < 0
+    # a benign addition that leaves prey intact gets no crash penalty
+    benign = metrics({"grazer": 195, "wolf": 10, "beetle": 40},
+                     samples=flat_samples({"grazer": 195, "wolf": 10, "beetle": 40}))
+    assert score_candidate(benign, ctrl, candidate_species=["beetle"]).breakdown.get("prey_crash", 0.0) == 0

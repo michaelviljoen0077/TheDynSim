@@ -78,6 +78,23 @@ def on_tick(world):
   (death cause `old_age`). Faster species should cost more energy per tick — that's
   your design responsibility, and the fitness function punishes free lunches.
 
+### Writing a STABLE predator (read this before adding one)
+The most common failure is a predator that hunts so well it exterminates its prey
+and then starves — wiping out two species. A sustainable predator:
+- **Only hunts when hungry** (e.g. `if energy < threshold`), so well-fed predators
+  leave prey alone and the prey population recovers.
+- **Reproduces slowly and capped**, ideally tied to prey abundance (fewer prey ⇒
+  fewer predators), not on a fixed timer.
+- **Gives prey escape**: modest speed/attack, a real chance to flee.
+- Expect the fitness function to reject candidates that crash any existing species
+  toward extinction in the shadow run — a predator that halves its prey scores badly.
+
+### Reviving an extinct species
+An extinct species name (0 living members) is FREE to reclaim: just
+`register_species` it again (same name is fine) — you don't need lineage_parent for
+a dead species. Reusing a live species' name still fails; mutate a LIVE plugin via
+`PLUGIN_META['lineage_parent']` instead. Give a brand-new plugin a unique `name`.
+
 ### Extinction is remembered
 When a species that once had a population dies out completely, it is moved to the
 world's **extinction ledger** (surfaced in the observation report as

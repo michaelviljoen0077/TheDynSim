@@ -99,6 +99,19 @@ def score_candidate(candidate_metrics: dict, control_metrics: dict,
     # a candidate that *prevents* a control-run extinction earns the mirror bonus
     breakdown["extinctions"] += w.extinctions * 0.5 * max(0, ctrl_ext - cand_ext)
 
+    # PREY-CRASH penalty: catch exterminator predators before promotion. Any
+    # EXISTING species the candidate drives to < 30% of its control-run level
+    # (without fully going extinct, which the term above already covers) is a
+    # collapse-in-progress — penalise it, since the crash usually completes in
+    # the live world after the shadow horizon ends.
+    crash = 0.0
+    for sp, ctrl_n in ctrl_final.items():
+        if ctrl_n >= 20 and sp not in (candidate_species or []):
+            ratio = cand_final.get(sp, 0) / ctrl_n
+            if 0.0 < ratio < 0.3:
+                crash += (0.3 - ratio) / 0.3
+    breakdown["prey_crash"] = -w.extinctions * crash
+
     # trophic balance: predation should exist but not dominate deaths
     cand_deaths = candidate_metrics.get("deaths", {})
     total_pred = sum(d.get("predation", 0) for d in cand_deaths.values())

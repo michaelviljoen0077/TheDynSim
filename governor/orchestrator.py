@@ -68,7 +68,7 @@ def _species_of(source: str) -> list[str]:
 @dataclass
 class GovernorConfig:
     n_candidates: int = 3
-    shadow_ticks: int = 1200
+    shadow_ticks: int = 2200          # long enough to expose slow exterminations
     promotion_threshold: float = 0.5     # candidate.total must exceed this (control-relative)
     max_parallel_workers: int = 4
     # automatic cadence: a new cycle starts once this many live-sim ticks have

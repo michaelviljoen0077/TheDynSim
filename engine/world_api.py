@@ -125,16 +125,19 @@ class WorldAPI:
                 f"species {name!r} not in PLUGIN_META['species'] {sorted(self._declared)}",
             )
         if name in self._world.registry.by_name:
-            if name in self._adoptable:
-                # lineage replacement: restyle/re-tune the species, keep its prop
-                # layout (live entities carry data in those slots)
+            existing = self._world.registry.by_name[name]
+            extinct = int(self._world.store.alive_indices(existing.id).size) == 0
+            if name in self._adoptable or extinct:
+                # lineage replacement, OR reclaiming an EXTINCT species name (no
+                # living members) — the governor revives niches by re-using names,
+                # so an empty species is free to take over. Prop layout is kept.
                 self._world.registry.adopt(name, self._plugin_name, size=size, color=color,
                                            speed=speed, swim_speed=swim_speed, lifespan=lifespan)
                 return
             raise CapabilityViolation(
                 "duplicate-species",
-                f"species {name!r} already exists (owned by another plugin); to take it "
-                "over, set PLUGIN_META['lineage_parent'] to the owning plugin's name",
+                f"species {name!r} already exists and is alive; to take it over, set "
+                "PLUGIN_META['lineage_parent'] to the owning plugin's name",
             )
         self._world.registry.register(
             name, plugin=self._plugin_name, size=size, color=color, speed=speed,

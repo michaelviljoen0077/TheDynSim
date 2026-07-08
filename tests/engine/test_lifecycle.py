@@ -2,7 +2,13 @@
 
 from engine import World, WorldConfig
 from engine.entities import SURFACE, UNDERGROUND
-from engine.plugin_host import EXTINCTION_GRACE, PRUNE_AGE, REAP_EVERY, PluginHost
+from engine.plugin_host import (
+    EXTINCTION_GRACE,
+    PRUNE_AGE,
+    REAP_EVERY,
+    PluginHost,
+    PluginInstallError,
+)
 
 MORTAL = '''
 PLUGIN_META = {"name": "mayflies", "contract": 1, "species": ["mayfly"], "lineage_parent": None}
@@ -67,3 +73,27 @@ def test_extinction_survives_snapshot(tmp_path):
     p = save_snapshot(w, tmp_path / "x.npz")
     restored = load_snapshot(p)
     assert restored.extinct == w.extinct
+
+
+def test_extinct_species_and_plugin_name_can_be_reclaimed():
+    """After a species goes extinct, a new plugin may re-use its (species and
+    plugin) name to revive the niche — the governor does this constantly."""
+    w = World(WorldConfig(seed=2, size=64, initial_capacity=512))
+    host = PluginHost(w)
+    host.install(MORTAL % 100)  # 'mayflies' plugin, 'mayfly' species; will die out
+    w.run(100 + EXTINCTION_GRACE + REAP_EVERY + 10)
+    assert any(e["species"] == "mayfly" for e in w.extinct)
+    # same plugin name + same species name -> should reclaim, not raise duplicate
+    rec = host.install(MORTAL % 100)
+    assert rec.status == "live"
+    assert w.store.alive_indices(w.registry.by_name["mayfly"].id).size > 0
+
+
+def test_live_species_name_still_protected():
+    """A LIVE species/plugin name cannot be duplicated (only extinct ones reclaim)."""
+    import pytest
+    w = World(WorldConfig(seed=2, size=64, initial_capacity=512))
+    host = PluginHost(w)  # noqa: F841
+    host.install(MORTAL % 100000)  # long-lived: stays alive
+    with pytest.raises(PluginInstallError):
+        host.install(MORTAL % 100000)  # same name, still alive -> duplicate

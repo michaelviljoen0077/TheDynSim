@@ -252,9 +252,10 @@ class CubeFlora:
     def generate(cls, rng, size, terrain: CubeTerrain) -> CubeFlora:
         f = cls(size)
         # coherent surface noise (seamless across faces) * fertility, so the
-        # initial flora pattern has no per-face seam either
+        # initial flora pattern has no per-face seam either. Generous starting
+        # cover so the world begins lush and greens the land immediately.
         seedbed = _surface_noise_stack(rng, size, 3) * terrain.fertility
-        f.density = np.clip(seedbed * 0.6 * (1.0 - terrain.water_mask), 0.0, 1.0).astype(np.float32)
+        f.density = np.clip(seedbed * 1.4 * (1.0 - terrain.water_mask), 0.0, 1.0).astype(np.float32)
         return f
 
     def step(self, terrain: CubeTerrain, weather: CubeWeather, season_frac: float,

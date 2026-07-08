@@ -167,7 +167,7 @@ class Flora:
     def generate(cls, rng: np.random.Generator, size: int, terrain: Terrain) -> Flora:
         f = cls(size)
         seedbed = fractal_noise(rng, size, 3) * terrain.fertility
-        f.density = np.clip(seedbed * 0.6 * (1.0 - terrain.water_mask), 0.0, 1.0).astype(np.float32)
+        f.density = np.clip(seedbed * 1.4 * (1.0 - terrain.water_mask), 0.0, 1.0).astype(np.float32)
         return f
 
     def step(self, terrain: Terrain, weather: Weather, season_frac: float,

@@ -66,6 +66,16 @@ class Notebook:
         with self._lock:
             self.db.close()
 
+    def reset_all(self) -> None:
+        """Wipe the entire notebook — every run and all its history. Used on a
+        fresh server boot so a new world isn't shown prior worlds' cycles."""
+        with self._lock:
+            for table in ("candidates", "outcomes", "lineage", "cycles",
+                          "interventions", "metrics", "runs"):
+                self.db.execute(f"DELETE FROM {table}")
+            self.db.commit()
+        self.run_id = None
+
     def clear_run(self) -> None:
         """Delete all history for the current run — cycles, candidates, outcomes,
         interventions, lineage, metrics. Called when the live world is reset, so a

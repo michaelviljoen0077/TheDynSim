@@ -79,8 +79,11 @@ def create_app(seed: int = 424242, world_size: int = 256, topology: str = "cube"
     provider = OllamaProvider()
     if provider.available():
         notebook = Notebook(Path(__file__).resolve().parent.parent / "data" / "run.db")
-        if notebook.resume_latest_run() is None:
-            notebook.start_run(seed, runner.config.to_json())
+        # the server always boots a FRESH world (world state isn't auto-resumed
+        # across restarts), so start a clean notebook too — no stale cycles from
+        # prior worlds. (When world auto-resume lands, this becomes a real resume.)
+        notebook.reset_all()
+        notebook.start_run(seed, runner.config.to_json())
         app.state.orchestrator = Orchestrator(runner, notebook, provider)
         log.info("governor configured with %s", provider.name)
     else:

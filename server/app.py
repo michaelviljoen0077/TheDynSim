@@ -265,10 +265,13 @@ def create_app(seed: int = 424242, world_size: int = 640) -> FastAPI:
         try:
             with runner.lock:
                 sync = protocol.sync_message(runner.world)
-                terrain = protocol.encode_terrain(runner.world)
+                nfaces = protocol.face_count(runner.world)
+                terrains = [protocol.encode_terrain(runner.world, f) for f in range(nfaces)]
             await ws.send_json(sync)
-            await ws.send_bytes(terrain)
+            for terrain in terrains:               # one per face (six on a cube)
+                await ws.send_bytes(terrain)
             species_count = len(sync["species"])
+            field_slots = len(FIELDS) * nfaces      # round-robin (field, face)
             while True:
                 loop_t0 = asyncio.get_event_loop().time()
                 resync = None
@@ -278,8 +281,10 @@ def create_app(seed: int = 424242, world_size: int = 640) -> FastAPI:
                     frame = protocol.frame_message(world, runner.measured_tps)
                     field_frame = None
                     if frame_no % FIELD_EVERY == 0:
-                        field_id = FIELDS[(frame_no // FIELD_EVERY) % len(FIELDS)]
-                        field_frame = protocol.encode_field(world, field_id)
+                        slot = (frame_no // FIELD_EVERY) % field_slots
+                        field_id = FIELDS[slot % len(FIELDS)]
+                        field_face = slot // len(FIELDS)
+                        field_frame = protocol.encode_field(world, field_id, field_face)
                     if len(world.registry.by_id) != species_count:
                         species_count = len(world.registry.by_id)
                         resync = protocol.sync_message(world)

@@ -53,23 +53,26 @@ def test_rest_control(client):
 def test_ws_sync_terrain_and_entity_frames(client):
     with client.websocket_connect("/ws") as ws:
         sync = read_json(ws, "sync")
-        assert sync["protocol"] == 1
+        assert sync["protocol"] == 2
         size = sync["size"]
         names = {s["name"] for s in sync["species"]}
         assert {"grazer", "bird"} <= names
 
+        assert sync["protocol"] == 2 and sync["faces"] == 1  # flat world: one face
+
         terrain = read_binary(ws)
         kind, tick, epoch, n = struct.unpack_from("<4I", terrain, 0)
-        assert kind == 1 and n == size
-        assert len(terrain) == 16 + size * size * 4 + size * size
+        (face,) = struct.unpack_from("<I", terrain, 16)
+        assert kind == 1 and n == size and face == 0
+        assert len(terrain) == 20 + size * size * 4 + size * size  # header + face word + planes
 
-        heights = np.frombuffer(terrain, dtype="<f4", count=size * size, offset=16)
+        heights = np.frombuffer(terrain, dtype="<f4", count=size * size, offset=20)
         assert 0.0 <= heights.min() and heights.max() <= 1.0
 
         entities = read_binary(ws)
         kind, tick, epoch, n = struct.unpack_from("<4I", entities, 0)
         assert kind == 2 and n >= 150  # grazers + wolves + birds (halved initial populations)
-        assert len(entities) == 16 + n * (4 + 4 * 4 + 2 + 1)
+        assert len(entities) == 16 + n * (4 + 4 * 4 + 2 + 1 + 1)  # +face u8
         off = 16 + n * 4
         xs = np.frombuffer(entities, dtype="<f4", count=n, offset=off)
         assert 0.0 <= xs.min() and xs.max() < size
@@ -88,9 +91,9 @@ def test_field_frame_arrives(client):
             kind = struct.unpack_from("<I", data, 0)[0]
             if kind == 3:
                 _, tick, epoch, size = struct.unpack_from("<4I", data, 0)
-                (field_id,) = struct.unpack_from("<I", data, 16)
-                assert field_id in (0, 1, 2)
-                assert len(data) == 20 + size * size
+                field_id, face = struct.unpack_from("<2I", data, 16)
+                assert field_id in (0, 1, 2) and face == 0
+                assert len(data) == 24 + size * size  # header + field_id + face + plane
                 return
         pytest.fail("no field frame within 5s")
 

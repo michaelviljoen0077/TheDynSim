@@ -27,6 +27,18 @@ class WorldConfig:
     max_entities_per_plugin: int = 4000
     max_spawns_per_tick: int = 200
     max_store_keys: int = 64
+    # hard ceiling per species — the many-species end-goal needs each species
+    # bounded so total entity count (the real perf driver) stays sane
+    max_entities_per_species: int = 1000
+
+    # density-dependent crowding stress: the non-predator overpopulation control.
+    # An entity with more than `crowding_softcap` same-species neighbours within
+    # `crowding_radius` loses `crowding_penalty` energy per excess neighbour each
+    # tick — models competition/disease/stress. Proportional (not catastrophic),
+    # so it throttles growth smoothly instead of causing boom-bust collapse.
+    crowding_radius: float = 6.0
+    crowding_softcap: int = 6
+    crowding_penalty: float = 0.20
 
     extra: dict = field(default_factory=dict)  # forward-compatible bag
 

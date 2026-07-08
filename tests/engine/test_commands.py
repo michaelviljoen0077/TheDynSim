@@ -147,3 +147,52 @@ def test_moves_survive_store_growth_mid_apply():
     assert float(w.store.py[i2]) == 25.0   # post-grow move applied to live arrays
     assert float(w.store.energy[i1]) == 77.0
     assert w.store.count == 8
+
+
+def test_old_age_death():
+    w = World(WorldConfig(seed=4, size=64, initial_capacity=64))
+    sp = w.registry.register("mayfly", lifespan=10)
+    h = w.store.spawn(sp.id, 5.0, 5.0, 0.0, SURFACE, 100.0)
+    w.run(10)
+    assert w.store.is_valid(h)   # age just reached 10; sweep runs before the increment
+    w.run(1)
+    assert not w.store.is_valid(h)
+    assert w.deaths.get("mayfly", {}).get("old_age", 0) == 1
+
+
+def test_per_species_hard_cap():
+    from engine.plugin_host import PluginHost
+    w = World(WorldConfig(seed=4, size=128, initial_capacity=8192,
+                          max_entities_per_species=50, max_entities_per_plugin=10000))
+    breeder = '''
+PLUGIN_META = {"name": "rabbits", "contract": 1, "species": ["rabbit"], "lineage_parent": None}
+def setup(world):
+    world.register_species("rabbit")
+    for _ in range(40):
+        x, y = world.random_surface_point()
+        world.spawn("rabbit", x, y, energy=100.0)
+def on_tick(world):
+    for r in world.entities("rabbit"):
+        x, y, _z = world.pos(r)
+        world.spawn("rabbit", x, y, energy=100.0)  # breed with no limit
+'''
+    h = PluginHost(w)
+    rec = h.install(breeder)
+    w.run(20)
+    assert w.store.alive_indices(w.registry.by_name["rabbit"].id).size <= 50
+    assert rec.api.spawn_drops > 0
+    assert rec.status == "live"  # hitting the cap is not an error
+
+
+def test_crowding_stress_drains_dense_clusters():
+    # pack many entities into one spot; crowding must drain energy and kill some
+    w = World(WorldConfig(seed=4, size=128, initial_capacity=8192,
+                          crowding_softcap=4, crowding_penalty=5.0, crowding_radius=6.0))
+    sp = w.registry.register("packed", lifespan=0)
+    for _ in range(40):
+        w.store.spawn(sp.id, 20.0 + w.rng.uniform(-1, 1), 20.0 + w.rng.uniform(-1, 1),
+                      0.0, SURFACE, 20.0)
+    w.run(10)
+    survivors = w.store.alive_indices(sp.id).size
+    assert survivors < 40  # dense cluster thinned
+    assert w.deaths.get("packed", {}).get("crowding", 0) > 0

@@ -64,6 +64,7 @@ class WorldAPI:
         self._adoptable = set(adoptable_species or ())
         self._spawns_this_tick = 0
         self._owned_alive = 0
+        self._species_counts: dict[int, int] = {}
         self.spawn_drops = 0  # spawns dropped by quota (an environmental limit, not an error)
         self.size = float(world.config.size)  # world edge length (positions span 0..size-1)
         self.rng = world.plugin_rng(plugin_name)
@@ -103,16 +104,17 @@ class WorldAPI:
 
     def on_tick_begin(self) -> None:
         self._spawns_this_tick = 0
-        self._owned_alive = sum(
-            int(self._world.store.alive_indices(sp.id).size)
+        self._species_counts = {
+            sp.id: int(self._world.store.alive_indices(sp.id).size)
             for name in self._declared
             if (sp := self._world.registry.by_name.get(name)) is not None
-        )
+        }
+        self._owned_alive = sum(self._species_counts.values())
 
     # -- species & lifecycle ---------------------------------------------------
 
     def register_species(self, name: str, size: float = 1.0, color: str = "#cccccc",
-                         speed: float = 2.5, swim_speed: float = 0.0,
+                         speed: float = 2.5, swim_speed: float = 0.0, lifespan: int = 0,
                          strata: tuple[int, ...] = (SURFACE,),
                          props: tuple[str, ...] = ()) -> None:
         if name not in self._declared:
@@ -124,8 +126,8 @@ class WorldAPI:
             if name in self._adoptable:
                 # lineage replacement: restyle/re-tune the species, keep its prop
                 # layout (live entities carry data in those slots)
-                self._world.registry.adopt(name, self._plugin_name, size=size,
-                                           color=color, speed=speed, swim_speed=swim_speed)
+                self._world.registry.adopt(name, self._plugin_name, size=size, color=color,
+                                           speed=speed, swim_speed=swim_speed, lifespan=lifespan)
                 return
             raise CapabilityViolation(
                 "duplicate-species",
@@ -134,7 +136,7 @@ class WorldAPI:
             )
         self._world.registry.register(
             name, plugin=self._plugin_name, size=size, color=color, speed=speed,
-            swim_speed=swim_speed, strata=tuple(strata), props=tuple(props),
+            swim_speed=swim_speed, lifespan=lifespan, strata=tuple(strata), props=tuple(props),
         )
 
     def spawn(self, species: str, x: float, y: float, stratum: int = SURFACE,
@@ -146,8 +148,11 @@ class WorldAPI:
         sp = self._owned(species)
         cfg = self._world.config
         self._spawns_this_tick += 1
+        # count this species' pending spawns this tick toward its hard cap
+        self._species_counts[sp.id] = self._species_counts.get(sp.id, 0) + 1
         if (self._spawns_this_tick > cfg.max_spawns_per_tick
-                or self._owned_alive + self._spawns_this_tick > cfg.max_entities_per_plugin):
+                or self._owned_alive + self._spawns_this_tick > cfg.max_entities_per_plugin
+                or self._species_counts[sp.id] > cfg.max_entities_per_species):
             self.spawn_drops += 1
             return
         self._world.commands.spawn(sp.id, float(x), float(y), float(z), int(stratum),

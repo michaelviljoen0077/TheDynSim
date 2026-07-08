@@ -34,7 +34,7 @@ def test_food_chain_runs(caplog):
     host = host_with_examples(world)
     grazers0 = world.store.alive_indices(world.registry.by_name["grazer"].id).size
     wolves0 = world.store.alive_indices(world.registry.by_name["wolf"].id).size
-    assert grazers0 == 100 and wolves0 == 6
+    assert grazers0 == 140 and wolves0 == 10
     world.run(600)
     grazers = world.store.alive_indices(world.registry.by_name["grazer"].id).size
     wolves = world.store.alive_indices(world.registry.by_name["wolf"].id).size

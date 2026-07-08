@@ -10,10 +10,10 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "grazer", size=1.6, color="#c9a35c", speed=1.8,
+        "grazer", size=1.6, color="#c9a35c", speed=1.8, lifespan=4500,
         strata=(world.SURFACE,), props=("gestation",),
     )
-    for _ in range(100):
+    for _ in range(140):
         x, y = world.random_surface_point()
         world.spawn("grazer", x, y, stratum=world.SURFACE,
                     energy=80.0 + 50.0 * world.rng.random())

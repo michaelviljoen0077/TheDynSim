@@ -10,13 +10,13 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "wolf", size=2.2, color="#8a4a4a", speed=1.7,
+        "wolf", size=2.2, color="#8a4a4a", speed=1.7, lifespan=6000,
         strata=(world.SURFACE,), props=("gestation",),
     )
     # spawn near the herds: on a large sparse world a randomly-placed wolf can
     # starve before ever finding prey
     grazers = world.entities("grazer")
-    for _ in range(6):
+    for _ in range(10):
         if grazers:
             k = int(world.rng.integers(0, len(grazers)))
             gx, gy, _gz = world.pos(grazers[k])
@@ -24,7 +24,9 @@ def setup(world):
             y = gy + world.rng.uniform(-12, 12)
         else:
             x, y = world.random_surface_point()
-        world.spawn("wolf", x, y, stratum=world.SURFACE, energy=140.0)
+        # generous founder energy: on a big sparse map a wolf may hunt a long
+        # while before its first kill — don't let the pack starve at birth
+        world.spawn("wolf", x, y, stratum=world.SURFACE, energy=260.0)
 
 
 def on_tick(world):
@@ -36,7 +38,7 @@ def on_tick(world):
         energy = world.get(wolf, "energy") - 0.18
         x, y, _z = world.pos(wolf)
 
-        prey = world.nearest(wolf, species="grazer", radius=14.0)
+        prey = world.nearest(wolf, species="grazer", radius=20.0)
         if prey is not None:
             px, py, _pz = world.pos(prey)
             dx, dy = px - x, py - y

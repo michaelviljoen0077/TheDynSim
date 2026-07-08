@@ -38,6 +38,7 @@ class Species:
     color: str = "#cccccc"
     speed: float = 2.5      # engine-enforced max distance per tick (see CommandBuffer.apply)
     swim_speed: float = 0.0  # max speed while on water; 0 = cannot swim (drowns on SURFACE water)
+    lifespan: int = 0        # max age in ticks; 0 = no old-age death (engine sweeps age>lifespan)
     strata: tuple[int, ...] = (SURFACE,)
     prop_slots: dict[str, int] = field(default_factory=dict)  # prop name -> slot
 
@@ -56,6 +57,7 @@ class SpeciesRegistry:
         color: str = "#cccccc",
         speed: float = 2.5,
         swim_speed: float = 0.0,
+        lifespan: int = 0,
         strata: tuple[int, ...] = (SURFACE,),
         props: tuple[str, ...] = (),
     ) -> Species:
@@ -71,6 +73,7 @@ class SpeciesRegistry:
             color=color,
             speed=max(0.1, min(float(speed), 8.0)),
             swim_speed=max(0.0, min(float(swim_speed), 8.0)),
+            lifespan=max(0, int(lifespan)),
             strata=tuple(strata),
             prop_slots={p: i for i, p in enumerate(props)},
         )
@@ -80,7 +83,7 @@ class SpeciesRegistry:
 
     def adopt(self, name: str, new_plugin: str, size: float | None = None,
               color: str | None = None, speed: float | None = None,
-              swim_speed: float | None = None) -> Species:
+              swim_speed: float | None = None, lifespan: int | None = None) -> Species:
         """Transfer species ownership to a replacement plugin (lineage mutation).
 
         Prop slots are preserved — live entities carry data in them; a mutation
@@ -96,6 +99,8 @@ class SpeciesRegistry:
             sp.speed = max(0.1, min(float(speed), 8.0))
         if swim_speed is not None:
             sp.swim_speed = max(0.0, min(float(swim_speed), 8.0))
+        if lifespan is not None:
+            sp.lifespan = max(0, int(lifespan))
         return sp
 
     def speeds_array(self) -> np.ndarray:
@@ -106,12 +111,16 @@ class SpeciesRegistry:
         """Per-species max swim speed (0 = drowns), indexed by species id."""
         return np.array([s.swim_speed for s in self.by_id] or [0.0], dtype=np.float32)
 
+    def lifespans_array(self) -> np.ndarray:
+        """Per-species lifespan in ticks (0 = immortal), indexed by species id."""
+        return np.array([s.lifespan for s in self.by_id] or [0], dtype=np.int64)
+
     def to_state(self) -> list[dict]:
         return [
             {
                 "id": s.id, "name": s.name, "plugin": s.plugin, "size": s.size,
                 "color": s.color, "speed": s.speed, "swim_speed": s.swim_speed,
-                "strata": list(s.strata), "prop_slots": s.prop_slots,
+                "lifespan": s.lifespan, "strata": list(s.strata), "prop_slots": s.prop_slots,
             }
             for s in self.by_id
         ]
@@ -123,8 +132,8 @@ class SpeciesRegistry:
             sp = Species(
                 id=d["id"], name=d["name"], plugin=d["plugin"], size=d["size"],
                 color=d["color"], speed=d.get("speed", 2.5),
-                swim_speed=d.get("swim_speed", 0.0), strata=tuple(d["strata"]),
-                prop_slots=dict(d["prop_slots"]),
+                swim_speed=d.get("swim_speed", 0.0), lifespan=d.get("lifespan", 0),
+                strata=tuple(d["strata"]), prop_slots=dict(d["prop_slots"]),
             )
             reg.by_name[sp.name] = sp
             reg.by_id.append(sp)

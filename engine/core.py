@@ -45,6 +45,7 @@ class World:
         self.plugin_manifest: list[dict] = []
         self._predation_marks: set[int] = set()   # transient within a tick
         self._drowning_marks: set[int] = set()    # transient within a tick
+        self._crowding_marks: set[int] = set()    # transient within a tick
         if _generate:
             self.terrain = Terrain.generate(
                 self.rng, config.size, config.terrain_octaves, config.sea_level_quantile
@@ -88,7 +89,9 @@ class World:
                             water=self.terrain.water_mask,
                             swim_speeds=self.registry.swim_speeds_array())
         self._water_effects()
+        self._crowding_stress()
         self._death_sweep()
+        self._old_age_sweep()
         alive = self.store.alive
         self.store.age[alive] += 1
         self.tick += 1
@@ -117,6 +120,41 @@ class World:
         store.energy[drowning] -= 0.8
         self._drowning_marks.update(drowning.tolist())
 
+    def _crowding_stress(self) -> None:
+        """Density-dependent energy drain — the non-predator overpopulation control.
+
+        Each entity crowded by more than `crowding_softcap` same-species neighbours
+        within `crowding_radius` loses energy proportional to the excess (models
+        competition/disease/stress). Proportional and self-limiting: as density
+        falls the drain vanishes, so it throttles growth toward a soft carrying
+        capacity without the boom-bust of a hard cap or a lethal plague.
+        """
+        cfg = self.config
+        if cfg.crowding_penalty <= 0.0:
+            return
+        store = self.store
+        alive = np.flatnonzero(store.alive)
+        if alive.size == 0:
+            return
+        # per-cell same-species density (vectorized): key = (species, stratum, cell).
+        # The spatial cell (~8) is close to crowding_radius, so same-cell count is a
+        # cheap, O(n) proxy for local density — no per-entity neighbour scan.
+        cell = max(cfg.crowding_radius, self.spatial.cell)
+        gx = (store.px[alive] / cell).astype(np.int64)
+        gy = (store.py[alive] / cell).astype(np.int64)
+        ncell = int(self.config.size / cell) + 2
+        key = ((store.species_id[alive].astype(np.int64) * 4 + store.stratum[alive])
+               * ncell * ncell + gx * ncell + gy)
+        _uniq, inverse, counts = np.unique(key, return_inverse=True, return_counts=True)
+        density = counts[inverse]                       # neighbours+self sharing the cell
+        excess = density - 1 - cfg.crowding_softcap     # exclude self
+        stressed = excess > 0
+        if not np.any(stressed):
+            return
+        rows = alive[stressed]
+        store.energy[rows] -= cfg.crowding_penalty * excess[stressed].astype(np.float32)
+        self._crowding_marks.update(rows.tolist())
+
     def _death_sweep(self) -> None:
         """Engine-mediated death: any entity at energy <= 0 dies, with cause attribution."""
         store = self.store
@@ -127,6 +165,8 @@ class World:
                 cause = "predation"
             elif row in self._drowning_marks:
                 cause = "drowning"
+            elif row in self._crowding_marks:
+                cause = "crowding"
             else:
                 cause = "starvation"
             handle = make_handle(row, store.generation[row])
@@ -134,6 +174,23 @@ class World:
             self.record_death(species, cause)
         self._predation_marks.clear()
         self._drowning_marks.clear()
+        self._crowding_marks.clear()
+
+    def _old_age_sweep(self) -> None:
+        """Engine-mediated old-age death: entities older than their species lifespan die."""
+        lifespans = self.registry.lifespans_array()
+        if not np.any(lifespans > 0):
+            return
+        store = self.store
+        alive = np.flatnonzero(store.alive)
+        if alive.size == 0:
+            return
+        limits = lifespans[store.species_id[alive]]
+        old = alive[(limits > 0) & (store.age[alive] >= limits)]
+        for row in old.tolist():
+            species = self.registry.by_id[int(store.species_id[row])].name
+            store.remove(make_handle(row, store.generation[row]))
+            self.record_death(species, "old_age")
 
     def run(self, ticks: int) -> None:
         for _ in range(ticks):

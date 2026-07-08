@@ -67,15 +67,26 @@ def on_tick(world):
 ## WorldAPI
 
 ### Species & lifecycle
-- `world.register_species(name, size=1.0, color="#rrggbb", speed=2.5, swim_speed=0.0, strata=(world.SURFACE,), props=("hunger",))`
+- `world.register_species(name, size=1.0, color="#rrggbb", speed=2.5, swim_speed=0.0, lifespan=0, strata=(world.SURFACE,), props=("hunger",))`
   — only in `setup`, only names declared in `PLUGIN_META["species"]`. `props` are
   per-entity float slots (max 8). **`speed` is the engine-enforced maximum distance
   per tick** (clamped to 0.1–8.0): whatever you pass to `move()`, an entity's net
   displacement per tick never exceeds its species speed. **`swim_speed`** (0–8) makes
   the species aquatic-capable: on water it moves at `swim_speed` instead of `speed`,
-  and it never drowns; `swim_speed=0` means water is lethal. Faster species should
-  cost more energy per tick — that's your design responsibility, and the fitness
-  function punishes free lunches.
+  and it never drowns; `swim_speed=0` means water is lethal. **`lifespan`** (ticks,
+  0 = immortal) gives old-age death: the engine removes entities older than it
+  (death cause `old_age`). Faster species should cost more energy per tick — that's
+  your design responsibility, and the fitness function punishes free lunches.
+
+### Engine-enforced population limits (you get these for free)
+- **Per-species hard cap** (default 1000): spawns beyond it are dropped (counted in
+  `spawnDrops`), never an error. Design for a stable population well under the cap.
+- **Crowding stress** (death cause `crowding`): an entity with too many same-species
+  neighbours nearby loses energy proportional to the local overcrowding — a built-in,
+  non-catastrophic overpopulation brake (competition/disease/stress). You don't code
+  it, but you benefit: spreading out and not over-breeding avoids it.
+- **Starvation** (`energy <= 0`) and **drowning** are also engine-mediated. Reproduction
+  should be gated on food/energy so scarcity naturally curbs growth.
 - `world.spawn(species, x, y, stratum=world.SURFACE, energy=100.0, z=0.0)` — owned species only.
 - `world.remove(handle)` — owned species only.
 

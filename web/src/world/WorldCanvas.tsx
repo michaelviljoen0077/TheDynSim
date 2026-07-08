@@ -40,12 +40,23 @@ function FlatScene({ size }: { size: number }) {
   );
 }
 
-// Spins the planet slowly about its axis under the fixed side-sun, so the
-// day/night terminator sweeps across the surface (one hemisphere lit, one dark).
+// Spins the planet about its axis under the fixed side-sun, PHASE-LOCKED to the
+// sim's day clock: rotation = dayFrac * 2π, so the visually-lit hemisphere is the
+// same one the simulation treats as daytime (local day/night by longitude). The
+// dayFrac (0..1) is unwrapped into a continuous angle and eased for smoothness.
 function PlanetGroup({ children }: { children: React.ReactNode }) {
   const ref = useRef<THREE.Group>(null);
+  const turns = useRef(0);
+  const prevDay = useRef(0);
   useFrame((_, delta) => {
-    if (ref.current) ref.current.rotation.y += delta * 0.1; // ~1 rotation / 63s
+    const g = ref.current;
+    if (!g) return;
+    const day = useStore.getState().frame?.clock.dayFrac ?? 0;
+    if (day < prevDay.current - 0.5) turns.current += 1; // wrapped 1 -> 0
+    prevDay.current = day;
+    const target = (turns.current + day) * Math.PI * 2;
+    // ease toward the target angle (never unwinds backwards mid-day)
+    g.rotation.y += (target - g.rotation.y) * Math.min(1, delta * 3);
   });
   return <group ref={ref}>{children}</group>;
 }

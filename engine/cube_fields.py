@@ -13,6 +13,12 @@ import numpy as np
 
 NF = 6
 
+# Fixed sun direction for the cube's local day/night. Matches the renderer's sun
+# position direction (SunLight.tsx cube branch) so the lit hemisphere is the warm
+# / daytime hemisphere in the simulation too.
+_SUN = np.array([1.0, 0.25, 0.35], dtype=np.float64)
+_SUN /= np.linalg.norm(_SUN)
+
 
 def _blur(a: np.ndarray, passes: int = 1) -> np.ndarray:
     """Box blur over the last two axes (per-face); leading face axis untouched."""
@@ -162,15 +168,31 @@ class CubeWeather:
         self.soil_moisture = np.full((NF, size, size), 0.3, dtype=np.float32)
         self.precipitation = np.zeros((NF, size, size), dtype=np.float32)
         self.wind = np.zeros((NF, 2), dtype=np.float32)
-        lat = np.linspace(-1.0, 1.0, size, dtype=np.float32)
-        self._lat_grad = np.tile(lat[:, None], (NF, 1, size)) * -6.0
+        # per-cell outward surface normals (unit), derived from geometry — used to
+        # compute LOCAL day/night: a cell is in daylight when its (rotated) normal
+        # faces the sun. Constant for a given size; recomputed on construction, not
+        # snapshotted.
+        pos = _cube_positions(size)                       # (6,S,S,3) on the cube
+        nrm = pos / np.linalg.norm(pos, axis=-1, keepdims=True)
+        self._nx = nrm[..., 0].astype(np.float32)
+        self._ny = nrm[..., 1].astype(np.float32)
+        self._nz = nrm[..., 2].astype(np.float32)
+        # true latitude cooling: coldest at the poles (|normal.y| -> 1)
+        self._lat_grad = (-11.0 * self._ny ** 2).astype(np.float32)
 
     def step(self, rng, terrain: CubeTerrain, day_frac: float, season_frac: float) -> None:
-        diurnal = float(np.sin(2 * np.pi * day_frac - np.pi / 2))
         seasonal = float(np.sin(2 * np.pi * season_frac - np.pi / 2))
+        # LOCAL day/night: spin the planet by the day phase and see which cells
+        # face the (fixed) sun. This is what makes the clock coherent on a globe —
+        # noon where the sun is overhead, midnight on the far side, per longitude.
+        theta = 2 * np.pi * day_frac
+        cos_t, sin_t = np.cos(theta), np.sin(theta)
+        rx = self._nx * cos_t + self._nz * sin_t
+        rz = -self._nx * sin_t + self._nz * cos_t
+        local_sun = rx * _SUN[0] + self._ny * _SUN[1] + rz * _SUN[2]   # (6,S,S) in [-1,1]
         self.wind += rng.normal(0.0, 0.02, (NF, 2)).astype(np.float32)
         self.wind *= 0.995
-        target = (16.0 + 10.0 * seasonal + 7.0 * diurnal + self._lat_grad
+        target = (16.0 + 10.0 * seasonal + 9.0 * local_sun + self._lat_grad
                   - 10.0 * terrain.height)
         self.temperature += 0.05 * (target - self.temperature)
         warm = np.clip(self.temperature, 0.0, None) * 0.0004

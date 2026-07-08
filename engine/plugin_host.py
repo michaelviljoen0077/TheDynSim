@@ -27,7 +27,7 @@ SLOW_TICK_BUDGET_S = 0.25       # single on_tick call over this counts a slow st
 SLOW_STRIKE_THRESHOLD = 8       # consecutive-ish strikes before quarantine
 REAP_EVERY = 500               # ticks between extinction/cleanup sweeps
 EXTINCTION_GRACE = 300         # a plugin must live this long before it can be declared extinct
-PRUNE_AGE = 5000               # dead/extinct plugins older than this are removed from the manifest
+PRUNE_AGE = 1500               # dead/extinct plugins older than this are removed from the manifest
 
 SAFE_BUILTINS = {
     name: __builtins__[name] if isinstance(__builtins__, dict) else getattr(__builtins__, name)
@@ -232,13 +232,17 @@ class PluginHost:
                 for s in r.meta.get("species", []):
                     self.world.record_extinction(s, name)
 
-        # prune plugins that are done: not live, no entities, dead a while
-        prunable = [
-            name for name in self.order
-            if self.plugins[name].status in ("retired", "quarantined", "extinct")
-            and alive_of(self.plugins[name]) == 0
-            and self.world.tick - self.plugins[name].promoted_tick > PRUNE_AGE
-        ]
+        # prune plugins that are done: not live and holding no entities. Retired
+        # plugins (replaced by a lineage child that adopted their species) are
+        # pruned as soon as they're empty; quarantined/extinct after PRUNE_AGE.
+        def prunable_now(r: PluginRecord) -> bool:
+            if r.status == "live" or alive_of(r) != 0:
+                return False
+            if r.status == "retired":
+                return True
+            return self.world.tick - r.promoted_tick > PRUNE_AGE
+
+        prunable = [name for name in self.order if prunable_now(self.plugins[name])]
         for name in prunable:
             del self.plugins[name]
             self.order.remove(name)

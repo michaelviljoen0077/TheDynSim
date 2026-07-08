@@ -10,7 +10,7 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "wolf", size=2.2, color="#8a4a4a", speed=1.7, lifespan=6000,
+        "wolf", size=2.2, color="#8a4a4a", speed=1.7, swim_speed=0.9, lifespan=6000,
         strata=(world.SURFACE,), props=("gestation",),
     )
     # spawn near the herds: on a large sparse world a randomly-placed wolf can
@@ -37,6 +37,20 @@ def on_tick(world):
     for wolf in world.entities("wolf"):
         energy = world.get(wolf, "energy") - 0.18
         x, y, _z = world.pos(wolf)
+        f = world.face(wolf)
+
+        # wolves can paddle (swim_speed) so they never drown, but water is slow
+        # and preyless — head for shore instead of hunting while wet
+        if world.water_at(x, y, f):
+            world.set(wolf, "energy", energy)
+            best_dx, best_dy, best_h = 0.0, 0.0, world.height_at(x, y, f)
+            for ddx, ddy in ((4.0, 0.0), (-4.0, 0.0), (0.0, 4.0), (0.0, -4.0)):
+                h = world.height_at(x + ddx, y + ddy, f)
+                if h > best_h:
+                    best_dx, best_dy, best_h = ddx, ddy, h
+            world.move(wolf, best_dx / 2.0 + world.rng.uniform(-0.3, 0.3),
+                       best_dy / 2.0 + world.rng.uniform(-0.3, 0.3))
+            continue
 
         prey = world.nearest(wolf, species="grazer", radius=20.0)
         if prey is not None:

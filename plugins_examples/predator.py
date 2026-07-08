@@ -33,7 +33,7 @@ def on_tick(world):
     pack_size = world.count("wolf")
     pack_cap = max(2, world.count("grazer") // 25)
     for wolf in world.entities("wolf"):
-        energy = world.get(wolf, "energy") - 0.22
+        energy = world.get(wolf, "energy") - 0.18
         x, y, _z = world.pos(wolf)
 
         prey = world.nearest(wolf, species="grazer", radius=14.0)
@@ -57,6 +57,6 @@ def on_tick(world):
                 pack_size += 1
                 world.spawn("wolf", x + world.rng.uniform(-2, 2), y + world.rng.uniform(-2, 2),
                             stratum=world.SURFACE, energy=90.0)
-        elif energy > 225.0 and pack_size < pack_cap:
+        elif energy > 190.0 and pack_size < pack_cap:
             world.set(wolf, "gestation", 60.0)
-            world.set(wolf, "energy", energy - 70.0)
+            world.set(wolf, "energy", energy - 55.0)

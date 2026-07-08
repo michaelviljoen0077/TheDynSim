@@ -110,6 +110,15 @@ def on_tick(world):
 - `world.size` — world edge length; positions span `0 .. world.size - 1`.
 - Strata constants: `world.UNDERGROUND` (0), `world.SURFACE` (1), `world.SKY` (2).
 
+## Diet is emergent, not a declared type
+
+There is no "herbivore/carnivore" flag — an animal's diet is simply which intake
+calls its `on_tick` makes. Grazing = `world.eat_flora(x, y, amount)`. Predation =
+`world.nearest(me, species=..., radius=r)` then `world.attack(prey, amount)`. An
+**omnivore** does both: hunt when prey is near, graze otherwise. A **scavenger**
+could gain energy near recently-dead entities. Mix freely — generalists stabilize
+an ecosystem that specialists make fragile.
+
 ## Reproduction (design guidance, not an engine feature)
 
 The engine has NO built-in breeding — reproduction is behavior you author, which

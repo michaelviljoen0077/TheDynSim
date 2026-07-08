@@ -23,6 +23,8 @@ from engine.validator import validate_plugin
 from engine.world_api import PluginError, WorldAPI
 
 ERROR_QUARANTINE_THRESHOLD = 5
+SLOW_TICK_BUDGET_S = 0.25       # single on_tick call over this counts a slow strike
+SLOW_STRIKE_THRESHOLD = 8       # consecutive-ish strikes before quarantine
 
 SAFE_BUILTINS = {
     name: __builtins__[name] if isinstance(__builtins__, dict) else getattr(__builtins__, name)
@@ -60,8 +62,9 @@ class PluginRecord:
     api: WorldAPI
     setup_fn: typing.Callable
     on_tick_fn: typing.Callable
-    status: str = "live"                # live | quarantined
+    status: str = "live"                # live | quarantined | retired
     error_count: int = 0
+    slow_strikes: int = 0
     last_error: str = ""
     tick_time_ema: float = 0.0
     events: list[dict] = field(default_factory=list)
@@ -106,7 +109,17 @@ class PluginHost:
 
         namespace = {"__builtins__": dict(SAFE_BUILTINS), "math": math, "typing": typing}
         code = compile(source, f"<plugin:{name}>", "exec")
-        exec(code, namespace)  # noqa: S102 — source passed the AST gate above
+        try:
+            exec(code, namespace)  # noqa: S102 — source passed the AST gate above
+        except Exception as e:  # noqa: BLE001 — module-exec is a boundary too
+            raise PluginInstallError(
+                [{"code": "exec-error", "message": f"{type(e).__name__}: {e}", "line": 0}]
+            ) from e
+        for fn in ("setup", "on_tick"):
+            if not callable(namespace.get(fn)):
+                raise PluginInstallError(
+                    [{"code": "contract-missing", "message": f"{fn} is not callable after exec", "line": 0}]
+                )
 
         plugin_id = len(self.order)
         api = WorldAPI(self.world, name, plugin_id, list(meta["species"]),
@@ -184,6 +197,19 @@ class PluginHost:
             dt = time.perf_counter() - t0
             record.tick_time_ema = dt if record.tick_time_ema == 0.0 \
                 else record.tick_time_ema * 0.95 + dt * 0.05
+            # slow-strike containment: a live plugin can't be preempted mid-call
+            # (in-process Python), but SUSTAINED over-budget ticks get it
+            # quarantined before it drags the whole sim down
+            if dt > SLOW_TICK_BUDGET_S:
+                record.slow_strikes += 1
+                if record.slow_strikes >= SLOW_STRIKE_THRESHOLD and record.status == "live":
+                    self.quarantine(
+                        record.name,
+                        f"slow-tick threshold: {record.slow_strikes} ticks over "
+                        f"{SLOW_TICK_BUDGET_S * 1000:.0f} ms (last {dt * 1000:.0f} ms)",
+                    )
+            else:
+                record.slow_strikes = max(0, record.slow_strikes - 1)
 
     def _record_error(self, record: PluginRecord, message: str) -> None:
         record.error_count += 1

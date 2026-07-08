@@ -98,6 +98,15 @@ class CommandBuffer:
                 self.spawned_handles.append(
                     store.spawn(species_id, x, y, z, stratum, energy, plugin_id)
                 )
+                if store.px is not xs:
+                    # the spawn grew the store: every array was reallocated, so the
+                    # locals aliased above now point at orphaned memory — refresh,
+                    # or every subsequent write this tick lands in the void
+                    alive = store.alive
+                    generation = store.generation
+                    xs = store.px
+                    ys = store.py
+                    zs = store.pz
                 continue
             handle = op[1]
             i = handle >> GEN_BITS

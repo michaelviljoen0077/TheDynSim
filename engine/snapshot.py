@@ -53,15 +53,30 @@ def _dump_header(world: World) -> str:
     return json.dumps(_header(world), sort_keys=True)
 
 
-def save_snapshot(world: World, path: str | Path) -> Path:
+def capture(world: World) -> dict:
+    """Copy the full world state into memory — fast (memcpy-scale), safe to run
+    under the engine lock. Pair with write_capture() OUTSIDE the lock so tens of
+    MB of disk I/O never stall the tick loop (NFR6)."""
+    return {
+        "header": _dump_header(world),
+        "arrays": {k: v.copy() for k, v in _arrays(world).items()},
+    }
+
+
+def write_capture(cap: dict, path: str | Path) -> Path:
+    """Write a capture() to disk. Slow (disk I/O) — never call under the engine lock."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix != ".npz":
         path = path.with_suffix(path.suffix + ".npz")
-    arrays = _arrays(world)
-    header = np.frombuffer(_dump_header(world).encode(), dtype=np.uint8)
-    np.savez(path, __header__=header, **arrays)  # uncompressed: FR "< 2 s" beats file size
+    header = np.frombuffer(cap["header"].encode(), dtype=np.uint8)
+    np.savez(path, __header__=header, **cap["arrays"])  # uncompressed: "< 2 s" beats size
     return path
+
+
+def save_snapshot(world: World, path: str | Path) -> Path:
+    """Capture + write in one call — for contexts that don't hold the engine lock."""
+    return write_capture(capture(world), path)
 
 
 def load_snapshot(path: str | Path) -> World:

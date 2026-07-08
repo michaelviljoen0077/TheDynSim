@@ -21,6 +21,7 @@ def setup(world):
 
 def on_tick(world):
     population = world.count("grazer")
+    wolves_exist = world.count("wolf") > 0
     for grazer in world.entities("grazer"):
         energy = world.get(grazer, "energy") - 0.08
         x, y, _z = world.pos(grazer)
@@ -42,7 +43,7 @@ def on_tick(world):
         world.set(grazer, "energy", min(energy, 200.0))
         # energy <= 0 is handled by the engine death sweep
 
-        threat = world.nearest(grazer, species="wolf", radius=8.0)
+        threat = world.nearest(grazer, species="wolf", radius=8.0) if wolves_exist else None
         if threat is not None:
             tx, ty, _tz = world.pos(threat)
             dx, dy = x - tx, y - ty
@@ -81,5 +82,9 @@ def on_tick(world):
                                 y + world.rng.uniform(-2, 2),
                                 stratum=world.SURFACE, energy=45.0)
         elif energy > 165.0 and world.get(grazer, "age") > 200 and population < 1500:
-            world.set(grazer, "gestation", 160.0)   # ~1.3 days of pregnancy
-            world.set(grazer, "energy", energy - 55.0)
+            # density-dependent conception: crowded or overgrazed ground means no
+            # pregnancy — the population saturates against its resources instead
+            # of sprinting to the hard cap
+            if world.flora_at(x, y) > 0.06 and len(world.within(grazer, 5.0, species="grazer")) < 4:
+                world.set(grazer, "gestation", 160.0)   # ~1.3 days of pregnancy
+                world.set(grazer, "energy", energy - 55.0)

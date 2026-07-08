@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from engine.reporter import build_report
-from engine.snapshot import save_snapshot
+from engine.snapshot import capture, write_capture
 from engine.validator import validate_plugin
 from governor.fitness import FitnessWeights, score_candidate
 from governor.llm import GenerationError, LLMProvider
@@ -49,6 +49,11 @@ STRATEGIES = [
      "directive": "Introduce a species whose main effect is on the environment or other "
                   "species indirectly (spreads/consumes flora, migrates between strata) to "
                   "improve stability or diversity without simply adding biomass."},
+    {"name": "omnivore / generalist",
+     "directive": "Introduce an OMNIVORE that both grazes flora (world.eat_flora) AND hunts "
+                  "prey (world.nearest + world.attack) — falling back to plants when prey is "
+                  "scarce. A generalist buffers the ecosystem against boom/bust in any single "
+                  "food source. Balance both intake rates so it doesn't out-compete specialists."},
 ]
 
 
@@ -136,9 +141,9 @@ class Orchestrator:
             live_species = [
                 s for m in world.plugin_manifest for s in m["meta"].get("species", [])
             ]
-            self.snapshot_dir.mkdir(parents=True, exist_ok=True)
             snap_path = self.snapshot_dir / f"cycle-{world.epoch}-{world.tick}.npz"
-            save_snapshot(world, snap_path)
+            cap = capture(world)  # fast in-memory copy under the lock
+        write_capture(cap, snap_path)  # slow disk write outside the lock (NFR6)
 
         cycle_id = self.notebook.start_cycle(report["epoch"], report["tick"], report,
                                              self.provider.name)

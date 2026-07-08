@@ -11,8 +11,9 @@ import threading
 import time
 from pathlib import Path
 
-from engine import World, WorldConfig, load_snapshot, save_snapshot
-from engine.plugin_host import PluginHost, PluginInstallError
+from engine import World, WorldConfig, load_snapshot
+from engine.plugin_host import PluginHost
+from engine.snapshot import capture, write_capture
 
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "data" / "snapshots" / "live"
 
@@ -95,22 +96,25 @@ class EngineRunner:
     def reset(self) -> None:
         with self.lock:
             self.world = self._make_world()
+            # a fresh run must not roll back into the discarded one
+            self.last_promotion_snapshot = None
 
     # -- promotion & rollback (Story 2.4) --------------------------------------
 
     def promote(self, source: str) -> dict:
-        """Pre-promotion snapshot -> hot-load. Raises PluginInstallError on rejection."""
+        """Pre-promotion snapshot -> hot-load. Raises PluginInstallError on rejection.
+
+        The world state is *captured* (in-memory copy) under the lock, then the
+        install runs under the lock, then the snapshot is written to disk OUTSIDE
+        the lock — tens of MB of disk I/O must never stall the tick loop (NFR6).
+        """
         with self.lock:
-            SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+            cap = capture(self.world)
             path = SNAPSHOT_DIR / f"pre-{self.world.epoch}-{self.world.tick}.npz"
-            save_snapshot(self.world, path)
-            try:
-                record = self.host.install(source)
-            except PluginInstallError:
-                path.unlink(missing_ok=True)  # nothing changed; drop the orphan snapshot
-                raise
-            self.last_promotion_snapshot = path
-            return {"installed": record.name, "snapshot": path.name}
+            record = self.host.install(source)  # raises PluginInstallError -> nothing written
+        write_capture(cap, path)
+        self.last_promotion_snapshot = path
+        return {"installed": record.name, "snapshot": path.name}
 
     def rollback(self) -> dict:
         """Restore the pre-promotion snapshot (world + plugin set), bump epoch (NFR9)."""
@@ -130,12 +134,13 @@ class EngineRunner:
         }
 
     def state(self) -> dict:
-        w = self.world
-        return {
-            "running": self.running,
-            "tick": w.tick,
-            "epoch": w.epoch,
-            "tps": round(self.measured_tps, 1),
-            "entities": w.store.count,
-            "targetTps": self.target_tps,
-        }
+        with self.lock:  # consistent read: reset/rollback swap self.world, step mutates it
+            w = self.world
+            return {
+                "running": self.running,
+                "tick": w.tick,
+                "epoch": w.epoch,
+                "tps": round(self.measured_tps, 1),
+                "entities": w.store.count,
+                "targetTps": self.target_tps,
+            }

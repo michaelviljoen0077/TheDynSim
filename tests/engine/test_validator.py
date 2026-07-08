@@ -46,6 +46,8 @@ HOSTILE = [
     (GOOD + "\ndef helper():\n    global counter\n    counter = 1\n", "global-state"),
     (GOOD + "\nclass Sneaky:\n    pass\n", "module-state"),
     ("def setup(world:\n", "syntax"),
+    (GOOD.replace("def setup(world):", "@staticmethod\ndef setup(world):"), "decorator"),
+    (GOOD + "\ndef helper(n=1/0):\n    return n\n", "default-expression"),
 ]
 
 

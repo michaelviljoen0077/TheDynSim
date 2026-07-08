@@ -124,3 +124,26 @@ def test_swimmers_swim_and_nonswimmers_drown():
         w.step()
     assert not w.store.is_valid(hg)
     assert w.deaths.get("goat", {}).get("drowning", 0) == 1
+
+
+def test_moves_survive_store_growth_mid_apply():
+    """Regression: a spawn that grows the store mid-apply reallocates every array;
+    later ops (and the move write-back) must target the NEW arrays, not orphans."""
+    w = World(WorldConfig(seed=3, size=64, initial_capacity=4))
+    sp = w.registry.register("bug", speed=8.0, swim_speed=8.0)  # amphibious: no drown drain
+    h1 = w.store.spawn(sp.id, 10.0, 10.0, 0.0, SURFACE, 50.0)
+    h2 = w.store.spawn(sp.id, 20.0, 20.0, 0.0, SURFACE, 50.0)
+    # queue: move h1, then enough spawns to exhaust capacity 4 and force _grow,
+    # then a move for h2 and an energy write for h1 (post-grow ops)
+    w.commands.move(h1, 5.0, 0.0)
+    for _ in range(6):
+        w.commands.spawn(sp.id, 1.0, 1.0, 0.0, SURFACE, 10.0, -1)
+    w.commands.move(h2, 0.0, 5.0)
+    w.commands.set_energy(h1, 77.0)
+    w.step()
+    assert w.store.capacity > 4
+    i1, i2 = handle_index(h1), handle_index(h2)
+    assert float(w.store.px[i1]) == 15.0   # pre-grow move applied to live arrays
+    assert float(w.store.py[i2]) == 25.0   # post-grow move applied to live arrays
+    assert float(w.store.energy[i1]) == 77.0
+    assert w.store.count == 8

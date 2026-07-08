@@ -119,7 +119,8 @@ def create_app(seed: int = 424242, world_size: int = 640) -> FastAPI:
 
     @app.get("/api/plugins")
     def get_plugins() -> list[dict]:
-        return runner.host.state()
+        with runner.lock:  # host.order/plugins mutate under the lock during promote/rollback
+            return runner.host.state()
 
     @app.post("/api/plugins/install")
     def install_plugin(body: InstallBody) -> dict:

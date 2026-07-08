@@ -158,6 +158,22 @@ def _check_contract_functions(tree: ast.Module, errors: list[Violation]) -> None
         if n_args != 1 or args.vararg or args.kwarg or args.kwonlyargs:
             errors.append(Violation("contract-signature", f"{name} must take exactly one argument (world)", fn.lineno))
 
+    # decorators and non-constant defaults execute AT MODULE EXEC TIME, outside
+    # any error boundary and against the restricted namespace — ban both
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        if node.decorator_list:
+            errors.append(Violation("decorator", f"decorators are not allowed (on {node.name!r})", node.lineno))
+        for default in [*node.args.defaults, *node.args.kw_defaults]:
+            if default is not None and not isinstance(default, ast.Constant):
+                errors.append(Violation(
+                    "default-expression",
+                    f"parameter defaults must be constants (in {node.name!r}) — expressions "
+                    "run at module exec time",
+                    node.lineno,
+                ))
+
 
 def _walk_banned_constructs(tree: ast.Module, errors: list[Violation],
                             warnings: list[Violation]) -> None:

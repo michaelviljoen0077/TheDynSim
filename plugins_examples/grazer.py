@@ -46,7 +46,7 @@ def on_tick(world):
         threat = world.nearest(grazer, species="wolf", radius=8.0) if wolves_exist else None
         if threat is not None:
             tx, ty, _tz = world.pos(threat)
-            dx, dy = x - tx, y - ty
+            dx, dy = -world.wrap_delta(x, tx), -world.wrap_delta(y, ty)  # flee, seam-aware
             d = (dx * dx + dy * dy) ** 0.5 or 1.0
             world.move(grazer, dx / d * 1.7 + world.rng.uniform(-0.3, 0.3),
                        dy / d * 1.7 + world.rng.uniform(-0.3, 0.3))
@@ -55,7 +55,7 @@ def on_tick(world):
         neighbour = world.nearest(grazer, species="grazer", radius=6.0)
         if neighbour is not None:
             nx, ny, _nz = world.pos(neighbour)
-            dx, dy = x - nx, y - ny
+            dx, dy = -world.wrap_delta(x, nx), -world.wrap_delta(y, ny)  # disperse, seam-aware
             d = (dx * dx + dy * dy) ** 0.5
             if d > 0.0:
                 world.move(grazer, dx / d * 0.6 + world.rng.uniform(-0.6, 0.6),

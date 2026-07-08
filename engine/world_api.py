@@ -309,6 +309,20 @@ class WorldAPI:
     def day_frac(self) -> float:
         return self._world.day_frac
 
+    def wrap_delta(self, a: float, b: float) -> float:
+        """Shortest signed distance from a to b along one axis. On a wrapped
+        (toroidal) world this crosses the seam when that's shorter, so steering
+        `world.move(h, world.wrap_delta(x, tx), world.wrap_delta(y, ty))` heads the
+        correct way even near an edge. On a flat world it's just b - a."""
+        d = b - a
+        if self._world.config.wrap:
+            size = self._world.config.size
+            if d > size * 0.5:
+                d -= size
+            elif d < -size * 0.5:
+                d += size
+        return d
+
     def random_surface_point(self) -> tuple[float, float]:
         """A random non-water surface location, drawn from the plugin RNG."""
         size = self._world.config.size

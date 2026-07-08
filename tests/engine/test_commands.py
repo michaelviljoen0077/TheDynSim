@@ -196,3 +196,51 @@ def test_crowding_stress_drains_dense_clusters():
     survivors = w.store.alive_indices(sp.id).size
     assert survivors < 40  # dense cluster thinned
     assert w.deaths.get("packed", {}).get("crowding", 0) > 0
+
+
+def test_wrap_topology_positions_and_queries():
+    """Toroidal world: crossing an edge wraps to the far side, and nearest/within
+    see across the seam (min-image distance)."""
+    w = World(WorldConfig(seed=2, size=64, topology="wrap", initial_capacity=256))
+    assert w.config.wrap
+    sp = w.registry.register("wrapbug", speed=8.0, swim_speed=8.0)
+    # entity near the right edge steps off it -> reappears near the left edge
+    h = w.store.spawn(sp.id, 62.0, 10.0, 0.0, SURFACE, 100.0)
+    w.commands.move(h, 5.0, 0.0)   # 62 + 5 = 67 -> wraps to 3
+    w.step()
+    i = handle_index(h)
+    assert abs(float(w.store.px[i]) - 3.0) < 1e-4
+
+    # two entities on opposite sides of the seam are neighbours on a torus
+    a = w.store.spawn(sp.id, 1.0, 30.0, 0.0, SURFACE, 100.0)
+    b = w.store.spawn(sp.id, 63.0, 30.0, 0.0, SURFACE, 100.0)  # 2 apart across the seam
+    w.spatial.rebuild(w.store)
+    near = w.spatial.nearest(w.store, 1.0, 30.0, 5.0, SURFACE, species_id=sp.id,
+                             exclude_row=handle_index(a))
+    assert near == handle_index(b)
+
+
+def test_flat_topology_still_clamps():
+    w = World(WorldConfig(seed=2, size=64, topology="flat", initial_capacity=256))
+    sp = w.registry.register("edgebug", speed=8.0, swim_speed=8.0)
+    h = w.store.spawn(sp.id, 62.0, 10.0, 0.0, SURFACE, 100.0)
+    w.commands.move(h, 8.0, 0.0)
+    w.step()
+    assert float(w.store.px[handle_index(h)]) <= 63.0   # clamped, not wrapped
+
+
+def test_wrap_determinism():
+    from engine import state_hash
+    def run(seed):
+        w = World(WorldConfig(seed=seed, size=64, topology="wrap", initial_capacity=512))
+        sp = w.registry.register("c", speed=3.0)
+        for _ in range(50):
+            w.store.spawn(sp.id, float(w.rng.uniform(0, 64)), float(w.rng.uniform(0, 64)),
+                          0.0, SURFACE, 100.0)
+        prng = w.plugin_rng("p")
+        for _ in range(120):
+            for hnd in w.store.handles_of(w.store.alive_indices(sp.id)):
+                w.commands.move(hnd, float(prng.uniform(-3, 3)), float(prng.uniform(-3, 3)))
+            w.step()
+        return state_hash(w)
+    assert run(9) == run(9)

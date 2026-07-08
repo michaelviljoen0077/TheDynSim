@@ -78,6 +78,18 @@ def on_tick(world):
   (death cause `old_age`). Faster species should cost more energy per tick — that's
   your design responsibility, and the fitness function punishes free lunches.
 
+### Design for MANY species, not big herds
+The world's goal is a rich web of *many* species, and total entity count — not
+species count — is what limits performance. So:
+- **Keep populations modest.** A stable species of 100–400 is worth far more than a
+  herd of 1000; the fitness function penalizes piling on biomass and rewards
+  diversity gained per entity added.
+- **Prefer small founder counts and slow, gated reproduction** (see below) so a new
+  species settles at a low equilibrium instead of sprinting to the cap.
+- **Vectorize decorative/ambient species.** If a species just drifts (plankton,
+  insects, background flora-eaters), update it in bulk over its whole population
+  rather than heavy per-entity logic, so it costs almost nothing.
+
 ### Engine-enforced population limits (you get these for free)
 - **Per-species hard cap** (default 1000): spawns beyond it are dropped (counted in
   `spawnDrops`), never an error. Design for a stable population well under the cap.

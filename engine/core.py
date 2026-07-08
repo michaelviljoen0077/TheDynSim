@@ -32,7 +32,7 @@ class World:
         self.registry = SpeciesRegistry(config.max_prop_slots)
         self.store = EntityStore(config.initial_capacity, config.max_prop_slots)
         self.commands = CommandBuffer()
-        self.spatial = SpatialHash(float(config.size))
+        self.spatial = SpatialHash(float(config.size), wrap=config.wrap)
         # plugin machinery placeholders (Epic 2) — snapshot-complete from day one
         self.plugin_rngs: dict[str, np.random.Generator] = {}
         self.plugin_stores: dict[str, dict[str, float | int | str]] = {}
@@ -87,7 +87,8 @@ class World:
         self.commands.apply(self.store, float(self.config.size), self._predation_marks,
                             flora=self.flora.density, speeds=self.registry.speeds_array(),
                             water=self.terrain.water_mask,
-                            swim_speeds=self.registry.swim_speeds_array())
+                            swim_speeds=self.registry.swim_speeds_array(),
+                            wrap=self.config.wrap)
         self._water_effects()
         self._crowding_stress()
         self._death_sweep()

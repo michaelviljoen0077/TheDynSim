@@ -20,15 +20,29 @@ from engine.entities import GEN_BITS, EntityStore
 
 
 class SpatialHash:
-    def __init__(self, world_size: float, cell: float = 8.0) -> None:
+    def __init__(self, world_size: float, cell: float = 8.0, wrap: bool = False) -> None:
         self.world_size = world_size
         self.cell = cell
+        self.wrap = wrap                       # toroidal topology: cells/distances wrap
         self.ncell = max(1, int(world_size / cell))
         # (stratum, species_id) -> {(cx, cy) -> [row, ...]}
         self.buckets: dict[tuple[int, int], dict[tuple[int, int], list[int]]] = {}
         self._layers_by_stratum: dict[int, list[dict]] = {}
         self.xs: list[float] = []
         self.ys: list[float] = []
+
+    def _wrap_cell(self, c: int) -> int:
+        return c % self.ncell if self.wrap else c
+
+    def _delta(self, a: float, b: float) -> float:
+        """b - a, min-image (shortest path across the seam) when wrapping."""
+        d = b - a
+        if self.wrap:
+            if d > self.world_size * 0.5:
+                d -= self.world_size
+            elif d < -self.world_size * 0.5:
+                d += self.world_size
+        return d
 
     def rebuild(self, store: EntityStore) -> None:
         # tick-start position cache: plain Python floats, indexed by row
@@ -79,19 +93,20 @@ class SpatialHash:
         r2 = radius * radius
         c0x, c0y = int(x / self.cell), int(y / self.cell)
         reach = max(1, math.ceil(radius / self.cell))
+        wrap_cell, delta = self._wrap_cell, self._delta
         xs, ys = self.xs, self.ys
         out: list[int] = []
         for layer in layers:
             for dx in range(-reach, reach + 1):
                 for dy in range(-reach, reach + 1):
-                    rows = layer.get((c0x + dx, c0y + dy))
+                    rows = layer.get((wrap_cell(c0x + dx), wrap_cell(c0y + dy)))
                     if not rows:
                         continue
                     for j in rows:
                         if j == exclude_row:
                             continue
-                        ddx = xs[j] - x
-                        ddy = ys[j] - y
+                        ddx = delta(x, xs[j])
+                        ddy = delta(y, ys[j])
                         if ddx * ddx + ddy * ddy <= r2:
                             out.append(j)
         return out
@@ -112,18 +127,19 @@ class SpatialHash:
         best, best_d = -1, radius * radius + 1e-9
         c0x, c0y = int(x / self.cell), int(y / self.cell)
         reach = max(1, math.ceil(radius / self.cell))
+        wrap_cell, delta = self._wrap_cell, self._delta
         xs, ys = self.xs, self.ys
         for layer in layers:
             for dx in range(-reach, reach + 1):
                 for dy in range(-reach, reach + 1):
-                    rows = layer.get((c0x + dx, c0y + dy))
+                    rows = layer.get((wrap_cell(c0x + dx), wrap_cell(c0y + dy)))
                     if not rows:
                         continue
                     for j in rows:
                         if j == exclude_row:
                             continue
-                        ddx = xs[j] - x
-                        ddy = ys[j] - y
+                        ddx = delta(x, xs[j])
+                        ddy = delta(y, ys[j])
                         d = ddx * ddx + ddy * ddy
                         if d < best_d or (d == best_d and best != -1 and j < best):
                             best_d, best = d, j

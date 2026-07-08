@@ -43,7 +43,9 @@ class InstallBody(BaseModel):
 
 def create_app(seed: int = 424242, world_size: int = 640) -> FastAPI:
     sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
-    runner = EngineRunner(WorldConfig(seed=seed, size=world_size), plugin_sources=sources)
+    # toroidal world: edges join, so creatures never pile up against a wall
+    runner = EngineRunner(WorldConfig(seed=seed, size=world_size, topology="wrap"),
+                          plugin_sources=sources)
 
     @contextlib.asynccontextmanager
     async def lifespan(app_: FastAPI):

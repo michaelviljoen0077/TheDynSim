@@ -18,6 +18,7 @@ class FitnessWeights:
     trophic: float = 1.0
     sustainability: float = 1.0
     novelty: float = 0.5
+    biomass_cost: float = 1.0     # penalty for piling on entities (perf + realism)
 
 
 @dataclass
@@ -122,5 +123,16 @@ def score_candidate(candidate_metrics: dict, control_metrics: dict,
     errors = sum(candidate_metrics.get("plugin_errors", {}).values())
     if errors:
         breakdown["errors"] = -0.5 * errors
+
+    # biomass parsimony: reward diversity gained per entity ADDED, so a lean
+    # species filling a niche beats a huge herd of one animal. Total entity count
+    # is the real perf ceiling, so cheap biodiversity is what we want to select.
+    cand_total = sum(cand_final.values())
+    ctrl_total = sum(ctrl_final.values())
+    added = cand_total - ctrl_total
+    if added > 0:
+        # penalty grows with how much biomass the candidate piles on beyond a
+        # modest budget — nudges the governor toward small, varied populations
+        breakdown["biomass_cost"] = -w.biomass_cost * max(0.0, (added - 400) / 400.0)
 
     return FitnessScore(total=sum(breakdown.values()), breakdown=breakdown)

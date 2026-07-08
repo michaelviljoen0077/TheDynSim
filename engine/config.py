@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, field
 class WorldConfig:
     seed: int = 424242
     size: int = 256                  # world is size x size columns
+    topology: str = "flat"           # "flat" (clamped edges) | "wrap" (toroidal: edges join)
     initial_capacity: int = 16384    # entity store starting capacity
     max_prop_slots: int = 8          # per-species named float slots
 
@@ -41,6 +42,10 @@ class WorldConfig:
     crowding_penalty: float = 0.20
 
     extra: dict = field(default_factory=dict)  # forward-compatible bag
+
+    @property
+    def wrap(self) -> bool:
+        return self.topology == "wrap"
 
     @property
     def ticks_per_season(self) -> int:

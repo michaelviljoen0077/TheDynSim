@@ -41,7 +41,7 @@ def on_tick(world):
         prey = world.nearest(wolf, species="grazer", radius=20.0)
         if prey is not None:
             px, py, _pz = world.pos(prey)
-            dx, dy = px - x, py - y
+            dx, dy = world.wrap_delta(x, px), world.wrap_delta(y, py)  # pursue, seam-aware
             d = (dx * dx + dy * dy) ** 0.5
             if d < 1.8:
                 energy += world.attack(prey, 60.0) * 0.8

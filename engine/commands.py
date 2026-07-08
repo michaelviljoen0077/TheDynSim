@@ -66,12 +66,13 @@ class CommandBuffer:
               flora: np.ndarray | None = None,
               speeds: np.ndarray | None = None,
               water: np.ndarray | None = None,
-              swim_speeds: np.ndarray | None = None) -> None:
-        """Apply ops in submission order (deterministic). Clamp positions to world bounds.
+              swim_speeds: np.ndarray | None = None,
+              wrap: bool = False) -> None:
+        """Apply ops in submission order (deterministic).
 
-        Positions clamp to [0, world_max - 1]: the terrain's last vertex is at
-        world_max - 1, so this keeps entities on the rendered map (an entity at
-        world_max - 1e-3 would hover visibly past the terrain rim).
+        Topology: when `wrap`, positions are taken modulo world_max (a toroidal
+        world — edges join, no walls); otherwise clamped to [0, world_max - 1]
+        (the terrain's last vertex, so entities stay on the rendered map).
 
         `speeds` (per-species max distance/tick) caps each entity's net
         displacement this tick — the engine-enforced speed limit, so no plugin
@@ -93,8 +94,12 @@ class CommandBuffer:
             kind = op[0]
             if kind == OP_SPAWN:
                 _, species_id, x, y, z, stratum, energy, plugin_id = op
-                x = min(max(x, 0.0), hi)
-                y = min(max(y, 0.0), hi)
+                if wrap:
+                    x = min(x % world_max, world_max - 0.01)
+                    y = min(y % world_max, world_max - 0.01)
+                else:
+                    x = min(max(x, 0.0), hi)
+                    y = min(max(y, 0.0), hi)
                 self.spawned_handles.append(
                     store.spawn(species_id, x, y, z, stratum, energy, plugin_id)
                 )
@@ -119,12 +124,10 @@ class CommandBuffer:
                 moved.pop(i, None)
             elif kind == OP_MOVE:
                 _, _, dx, dy, dz = op
+                # stage raw displacement; clamp/wrap happens once at the end so
+                # accumulated sub-moves and the speed cap compose correctly
                 cx, cy, cz = moved.get(i) or (float(xs[i]), float(ys[i]), float(zs[i]))
-                moved[i] = (
-                    min(max(cx + dx, 0.0), hi),
-                    min(max(cy + dy, 0.0), hi),
-                    cz + dz,
-                )
+                moved[i] = (cx + dx, cy + dy, cz + dz)
             elif kind == OP_SET_ENERGY:
                 store.energy[i] = op[2]
             elif kind == OP_SET_PROP:
@@ -155,8 +158,18 @@ class CommandBuffer:
                 over = dist > limit
                 if np.any(over):
                     scale = np.where(over, limit / np.maximum(dist, 1e-9), 1.0)
-                    vals[:, 0] = np.clip(xs[rows] + dx * scale, 0.0, hi)
-                    vals[:, 1] = np.clip(ys[rows] + dy * scale, 0.0, hi)
+                    vals[:, 0] = xs[rows] + dx * scale
+                    vals[:, 1] = ys[rows] + dy * scale
+            # finalize topology once: wrap (toroidal) or clamp (walled).
+            # guard the upper edge: float32 can round mod(x, size) up to exactly
+            # `size` (e.g. 639.9999 -> 640.0), which then indexes out of bounds
+            if wrap:
+                top = np.float32(world_max) - np.float32(0.01)
+                vals[:, 0] = np.minimum(np.mod(vals[:, 0], world_max), top)
+                vals[:, 1] = np.minimum(np.mod(vals[:, 1], world_max), top)
+            else:
+                np.clip(vals[:, 0], 0.0, hi, out=vals[:, 0])
+                np.clip(vals[:, 1], 0.0, hi, out=vals[:, 1])
             xs[rows] = vals[:, 0]
             ys[rows] = vals[:, 1]
             zs[rows] = vals[:, 2]

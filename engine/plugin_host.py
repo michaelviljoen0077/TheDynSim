@@ -25,6 +25,9 @@ from engine.world_api import PluginError, WorldAPI
 ERROR_QUARANTINE_THRESHOLD = 5
 SLOW_TICK_BUDGET_S = 0.25       # single on_tick call over this counts a slow strike
 SLOW_STRIKE_THRESHOLD = 8       # consecutive-ish strikes before quarantine
+REAP_EVERY = 500               # ticks between extinction/cleanup sweeps
+EXTINCTION_GRACE = 300         # a plugin must live this long before it can be declared extinct
+PRUNE_AGE = 5000               # dead/extinct plugins older than this are removed from the manifest
 
 SAFE_BUILTINS = {
     name: __builtins__[name] if isinstance(__builtins__, dict) else getattr(__builtins__, name)
@@ -62,11 +65,13 @@ class PluginRecord:
     api: WorldAPI
     setup_fn: typing.Callable
     on_tick_fn: typing.Callable
-    status: str = "live"                # live | quarantined | retired
+    status: str = "live"                # live | quarantined | retired | extinct
     error_count: int = 0
     slow_strikes: int = 0
     last_error: str = ""
     tick_time_ema: float = 0.0
+    promoted_tick: int = 0
+    ever_populated: bool = False        # became True once its species had entities
     events: list[dict] = field(default_factory=list)
 
 
@@ -127,6 +132,7 @@ class PluginHost:
         record = PluginRecord(
             name=name, plugin_id=plugin_id, source=source, meta=meta, api=api,
             setup_fn=namespace["setup"], on_tick_fn=namespace["on_tick"],
+            promoted_tick=self.world.tick,
         )
         if run_setup:
             api.on_tick_begin()
@@ -140,7 +146,17 @@ class PluginHost:
             # effects now so the plugin's initial population exists atomically
             self.world.commands.apply(self.world.store, float(self.world.config.size),
                                       flora=self.world.flora.density,
-                                      speeds=self.world.registry.speeds_array())
+                                      speeds=self.world.registry.speeds_array(),
+                                      water=self.world.terrain.water_mask,
+                                      swim_speeds=self.world.registry.swim_speeds_array(),
+                                      wrap=self.world.config.wrap, geom=self.world.geom)
+            # mark whether setup established a population, so a species that lives
+            # and dies entirely between reap sweeps is still seen as having existed
+            record.ever_populated = any(
+                int(self.world.store.alive_indices(sp.id).size) > 0
+                for s in meta.get("species", [])
+                if (sp := self.world.registry.by_name.get(s)) is not None
+            )
             if replacing is not None:
                 replacing.status = "retired"
                 replacing.events.append(
@@ -163,6 +179,8 @@ class PluginHost:
             record = host.install(entry["source"], run_setup=False)
             record.status = entry.get("status", "live")
             record.error_count = entry.get("error_count", 0)
+            record.promoted_tick = entry.get("promoted_tick", 0)
+            record.ever_populated = entry.get("ever_populated", False)
         host._sync_manifest()
         return host
 
@@ -174,14 +192,63 @@ class PluginHost:
                 "meta": r.meta,
                 "status": r.status,
                 "error_count": r.error_count,
+                "promoted_tick": r.promoted_tick,
+                "ever_populated": r.ever_populated,
             }
             for name in self.order
             for r in (self.plugins[name],)
         ]
 
+    # -- extinction & cleanup -----------------------------------------------------
+
+    def reap(self) -> None:
+        """Retire spent plugins and record extinctions (called on a cadence).
+
+        A live plugin whose species once had entities but are now all gone is
+        marked `extinct` (its species are moved to the world extinction ledger).
+        Long-dead retired/quarantined/extinct plugins with no live entities are
+        pruned from the manifest so the live plugin set stays lean over a long run.
+        """
+        store = self.world.store
+        reg = self.world.registry
+
+        def alive_of(rec: PluginRecord) -> int:
+            return sum(
+                int(store.alive_indices(sp.id).size)
+                for s in rec.meta.get("species", [])
+                if (sp := reg.by_name.get(s)) is not None
+            )
+
+        for name in self.order:
+            r = self.plugins[name]
+            if r.status != "live":
+                continue
+            n = alive_of(r)
+            if n > 0:
+                r.ever_populated = True
+            elif r.ever_populated and self.world.tick - r.promoted_tick > EXTINCTION_GRACE:
+                r.status = "extinct"
+                r.events.append({"tick": self.world.tick, "extinct": True})
+                for s in r.meta.get("species", []):
+                    self.world.record_extinction(s, name)
+
+        # prune plugins that are done: not live, no entities, dead a while
+        prunable = [
+            name for name in self.order
+            if self.plugins[name].status in ("retired", "quarantined", "extinct")
+            and alive_of(self.plugins[name]) == 0
+            and self.world.tick - self.plugins[name].promoted_tick > PRUNE_AGE
+        ]
+        for name in prunable:
+            del self.plugins[name]
+            self.order.remove(name)
+        self._sync_manifest()
+
     # -- runtime ------------------------------------------------------------------
 
     def _tick_all(self, world: World) -> None:
+        if world.tick % REAP_EVERY == 0 and world.tick > 0:
+            self.reap()
         for name in self.order:
             record = self.plugins[name]
             if record.status != "live":

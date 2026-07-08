@@ -61,6 +61,11 @@ def build_report(world: World, prev: dict | None = None) -> dict:
             {"name": m["name"], "status": m["status"], "species": m["meta"].get("species", [])}
             for m in world.plugin_manifest
         ],
+        # extinct species the governor should learn from (and not blindly recreate)
+        "extinct_species": [
+            {"species": e["species"], "plugin": e["plugin"], "tick": e["tick"]}
+            for e in world.extinct
+        ],
     }
     if prev is not None:
         deltas: dict[str, dict] = {}

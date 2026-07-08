@@ -30,7 +30,7 @@ class WorldConfig:
     max_store_keys: int = 64
     # hard ceiling per species — the many-species end-goal needs each species
     # bounded so total entity count (the real perf driver) stays sane
-    max_entities_per_species: int = 1000
+    max_entities_per_species: int = 500
 
     # density-dependent crowding stress: the non-predator overpopulation control.
     # An entity with more than `crowding_softcap` same-species neighbours within

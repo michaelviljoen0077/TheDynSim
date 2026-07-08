@@ -36,6 +36,7 @@ def _header(world: World) -> dict:
         "species": world.registry.to_state(),
         "deaths": world.deaths,
         "plugin_manifest": world.plugin_manifest,
+        "extinct": world.extinct,
     }
 
 
@@ -109,6 +110,7 @@ def load_snapshot(path: str | Path) -> World:
     world.plugin_stores = {k: dict(v) for k, v in header["plugin_stores"].items()}
     world.deaths = {k: dict(v) for k, v in header.get("deaths", {}).items()}
     world.plugin_manifest = list(header.get("plugin_manifest", []))
+    world.extinct = list(header.get("extinct", []))
     return world
 
 

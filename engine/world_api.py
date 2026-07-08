@@ -196,25 +196,32 @@ class WorldAPI:
             raise CapabilityViolation("unknown-prop", f"{sp.name!r} has no prop {prop!r}")
         return float(s.props[row, slot])
 
-    def nearest(self, handle: int, species: str | None = None, radius: float = 10.0) -> int | None:
+    def nearest(self, handle: int, species: str | None = None, radius: float = 10.0,
+                stratum: int | None = None) -> int | None:
+        """Nearest entity within radius. Queries the caller's own stratum by default;
+        pass `stratum=` to sense another layer (e.g. a burrower detecting surface
+        prey — it must still `set_stratum` to that layer to interact)."""
         row = self._row(handle)
         s = self._world.store
         sp_id = self._species(species).id if species is not None else None
+        st = int(s.stratum[row]) if stratum is None else int(stratum)
         j = self._world.spatial.nearest(
             s, float(s.px[row]), float(s.py[row]), float(radius),
-            int(s.stratum[row]), species_id=sp_id, exclude_row=row, face=int(s.face[row]),
+            st, species_id=sp_id, exclude_row=row, face=int(s.face[row]),
         )
         if j < 0:
             return None
         return (j << GEN_BITS) | int(s.generation[j])
 
-    def within(self, handle: int, radius: float, species: str | None = None) -> list[int]:
+    def within(self, handle: int, radius: float, species: str | None = None,
+               stratum: int | None = None) -> list[int]:
         row = self._row(handle)
         s = self._world.store
         sp_id = self._species(species).id if species is not None else None
+        st = int(s.stratum[row]) if stratum is None else int(stratum)
         rows = self._world.spatial.within(
             s, float(s.px[row]), float(s.py[row]), float(radius),
-            int(s.stratum[row]), species_id=sp_id, exclude_row=row, face=int(s.face[row]),
+            st, species_id=sp_id, exclude_row=row, face=int(s.face[row]),
         )
         return [(j << GEN_BITS) | int(s.generation[j]) for j in rows]
 

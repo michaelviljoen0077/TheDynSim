@@ -45,6 +45,8 @@ class World:
         # live plugin set (name/source/meta/status) maintained by PluginHost; snapshot-included
         # so rollback restores world + plugin set through one mechanism
         self.plugin_manifest: list[dict] = []
+        # extinction ledger: species that were alive and died out (snapshot-included)
+        self.extinct: list[dict] = []
         self._predation_marks: set[int] = set()   # transient within a tick
         self._drowning_marks: set[int] = set()    # transient within a tick
         self._crowding_marks: set[int] = set()    # transient within a tick
@@ -113,6 +115,15 @@ class World:
     def record_death(self, species_name: str, cause: str) -> None:
         by_cause = self.deaths.setdefault(species_name, {})
         by_cause[cause] = by_cause.get(cause, 0) + 1
+
+    def record_extinction(self, species_name: str, plugin_name: str) -> None:
+        """Move a species onto the extinction ledger (once); PluginHost.reap calls this."""
+        if any(e["species"] == species_name for e in self.extinct):
+            return
+        self.extinct.append({
+            "species": species_name, "plugin": plugin_name, "tick": self.tick,
+            "epoch": self.epoch,
+        })
 
     def _water_effects(self) -> None:
         """Surface entities on open water: swimmers are fine, non-swimmers drown."""

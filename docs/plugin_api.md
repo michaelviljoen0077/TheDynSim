@@ -78,6 +78,15 @@ def on_tick(world):
   (death cause `old_age`). Faster species should cost more energy per tick — that's
   your design responsibility, and the fitness function punishes free lunches.
 
+### Extinction is remembered
+When a species that once had a population dies out completely, it is moved to the
+world's **extinction ledger** (surfaced in the observation report as
+`extinct_species`) and its plugin is retired. Don't blindly recreate a species the
+ledger shows already failed under the same conditions — mutate the approach instead
+(fix its food source, its stratum, its reproduction) or fill a genuinely different
+niche. Predators especially: make sure your prey is reachable (same stratum, or
+sense-then-surface) or the species starves and joins the ledger.
+
 ### Design for MANY species, not big herds
 The world's goal is a rich web of *many* species, and total entity count — not
 species count — is what limits performance. So:
@@ -105,8 +114,11 @@ species count — is what limits performance. So:
 ### Queries (any species)
 - `world.entities(species) -> list[handle]` · `world.count(species) -> int`
 - `world.pos(handle) -> (x, y, z)` · `world.get(handle, prop) -> float` (props: declared slots, `"energy"`, `"age"`)
-- `world.nearest(handle, species=None, radius=10.0) -> handle | None` — same stratum only.
-- `world.within(handle, radius, species=None) -> list[handle]` — same stratum only.
+- `world.nearest(handle, species=None, radius=10.0, stratum=None) -> handle | None` — searches
+  the caller's own stratum by default. Pass `stratum=world.SURFACE` (etc.) to **sense another
+  layer** — e.g. a burrower detecting surface prey. To *interact* (attack/eat) across layers you
+  must still `set_stratum` onto that layer first; sensing alone doesn't move you.
+- `world.within(handle, radius, species=None, stratum=None) -> list[handle]` — same rules.
 
 ### Mutations (owned entities only)
 - `world.move(handle, dx, dy, dz=0.0)` — positions clamp to world bounds.

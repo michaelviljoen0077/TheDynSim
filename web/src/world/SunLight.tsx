@@ -51,24 +51,26 @@ export function SunLight() {
     // sweeps across the faces. Directional light + centre target does this for
     // free; dim ambient keeps the night side readable but clearly darker. ---
     if (isCube) {
+      // The sun is FIXED off to the side, so the day/night terminator sits
+      // permanently across the visible disk — one hemisphere lit, one dark. The
+      // PLANET spins under it (PlanetGroup), sweeping day/night across the
+      // surface. (An orbiting sun instead pulsed the whole disk bright<->dark.)
       const moon = moonRef.current;
-      const phi = dayFrac * Math.PI * 2; // one full orbit per day
-      const tilt = 0.35; // slight axial tilt so the poles get some day/night too
-      const rr = size * 1.5;
-      sun.position.set(Math.cos(phi) * rr, tilt * rr, Math.sin(phi) * rr);
+      const rr = size * 1.6;
+      sun.position.set(rr, rr * 0.25, rr * 0.35);
       sun.target.position.set(0, 0, 0);
       sun.target.updateMatrixWorld();
       sun.color.copy(SUN_HIGH);
-      sun.intensity = 2.1 * (1 - 0.35 * precip);
+      sun.intensity = 2.2 * (1 - 0.35 * precip);
       sun.visible = true;
       amb.color.copy(AMB_NIGHT);
-      amb.intensity = 0.32; // starlight fill — dark side stays visible, terminator reads
+      amb.intensity = 0.18; // low starlight fill so the night side reads as night
       if (moon) {
-        moon.position.set(-Math.cos(phi) * rr, tilt * rr, -Math.sin(phi) * rr);
+        moon.position.set(-rr, -rr * 0.25, -rr * 0.35); // opposite: faint far-side fill
         moon.target.position.set(0, 0, 0);
         moon.target.updateMatrixWorld();
         moon.color.copy(MOON);
-        moon.intensity = 0.35;
+        moon.intensity = 0.25;
         moon.visible = true;
       }
       if (scene.background instanceof THREE.Color) scene.background.copy(SPACE);

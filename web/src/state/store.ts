@@ -90,7 +90,7 @@ export const useStore = create<GenesisStore>()((set) => ({
   strata: [false, true, true],
   terrainVersion: 0,
   overlay: 'none',
-  spherify: false,
+  spherify: true, // default to the ball; uncheck Globe for the folded cube
   selectedEntity: null,
   labFocus: null,
 

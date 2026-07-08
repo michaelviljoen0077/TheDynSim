@@ -1,5 +1,7 @@
-import { Canvas } from '@react-three/fiber';
+import { useRef } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import * as THREE from 'three';
 import { useStore } from '../state/store';
 import { Terrain } from './Terrain';
 import { Water } from './Water';
@@ -38,6 +40,16 @@ function FlatScene({ size }: { size: number }) {
   );
 }
 
+// Spins the planet slowly about its axis under the fixed side-sun, so the
+// day/night terminator sweeps across the surface (one hemisphere lit, one dark).
+function PlanetGroup({ children }: { children: React.ReactNode }) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame((_, delta) => {
+    if (ref.current) ref.current.rotation.y += delta * 0.06; // ~1 rotation / 105s
+  });
+  return <group ref={ref}>{children}</group>;
+}
+
 function CubeScene({ size }: { size: number }) {
   const R = cubeRadius(size);
   // Cube corners sit at ~1.73*R; frame the whole globe with margin.
@@ -53,9 +65,11 @@ function CubeScene({ size }: { size: number }) {
       }}
     >
       <SunLight />
-      <CubeTerrain />
-      <CubeWater />
-      <CubeEntities />
+      <PlanetGroup>
+        <CubeTerrain />
+        <CubeWater />
+        <CubeEntities />
+      </PlanetGroup>
       <OrbitControls
         target={[0, 0, 0]}
         enablePan={false}

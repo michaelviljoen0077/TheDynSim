@@ -36,13 +36,16 @@ function writePositions(
   spherify: number,
 ): void {
   const S = t.size;
+  const span = S > 1 ? S - 1 : 1;
   const pos = geom.attributes.position as THREE.BufferAttribute;
   for (let gy = 0; gy < S; gy++) {
     for (let gx = 0; gx < S; gx++) {
       const v = gy * S + gx;
       const d = gx * S + gy;
       const outward = t.height[d] * heightScale;
-      surfacePoint(face, (gx + 0.5) / S, (gy + 0.5) / S, spherify, radius, outward, _pos, _nrm);
+      // vertices span the FULL face [0,1] (gx/(S-1)) so neighbouring faces meet
+      // exactly at the shared edge — no half-cell gap. Height comes from cell gx,gy.
+      surfacePoint(face, gx / span, gy / span, spherify, radius, outward, _pos, _nrm);
       pos.setXYZ(v, _pos.x, _pos.y, _pos.z);
     }
   }

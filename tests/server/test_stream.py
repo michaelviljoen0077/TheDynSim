@@ -16,7 +16,8 @@ from server.app import create_app
 
 @pytest.fixture()
 def client():
-    app = create_app(seed=99)
+    # flat/wrap single-face world: exercises the protocol-layout assertions below
+    app = create_app(seed=99, topology="wrap")
     with TestClient(app) as c:
         yield c
 

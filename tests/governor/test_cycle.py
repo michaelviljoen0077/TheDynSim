@@ -167,3 +167,19 @@ def test_busy_guard(rig):
         assert orch.run_cycle_async() is False
     finally:
         orch._busy.release()
+
+
+def test_clear_run_wipes_cycles(rig):
+    runner, notebook, tmp_path = rig
+    provider = ReplayProvider([proposal(BEETLE, "beetle")] + [proposal(HOSTILE, "x")] * 8)
+    orch = make_orch(runner, notebook, provider, tmp_path)
+    orch.run_cycle()
+    assert notebook.cycles(), "precondition: a cycle exists"
+    assert notebook.db.execute("SELECT COUNT(*) c FROM candidates").fetchone()["c"] > 0
+    # reset wipes the run's history
+    notebook.clear_run()
+    assert notebook.cycles() == []
+    assert notebook.db.execute("SELECT COUNT(*) c FROM candidates").fetchone()["c"] == 0
+    assert notebook.db.execute("SELECT COUNT(*) c FROM interventions").fetchone()["c"] == 0
+    orch.reset_state()
+    assert orch._last_promotion is None

@@ -66,6 +66,28 @@ class Notebook:
         with self._lock:
             self.db.close()
 
+    def clear_run(self) -> None:
+        """Delete all history for the current run — cycles, candidates, outcomes,
+        interventions, lineage, metrics. Called when the live world is reset, so a
+        fresh world starts with a clean lab notebook (no stale cycles)."""
+        if self.run_id is None:
+            return
+        with self._lock:
+            cur = self.db.execute("SELECT id FROM cycles WHERE run_id=?", (self.run_id,))
+            cycle_ids = [r["id"] for r in cur.fetchall()]
+            if cycle_ids:
+                qmarks = ",".join("?" * len(cycle_ids))
+                # lineage first (its subquery needs candidates to still exist), then the rest
+                self.db.execute(
+                    f"DELETE FROM lineage WHERE child_candidate_id IN "
+                    f"(SELECT id FROM candidates WHERE cycle_id IN ({qmarks}))", cycle_ids)
+                self.db.execute(f"DELETE FROM candidates WHERE cycle_id IN ({qmarks})", cycle_ids)
+                self.db.execute(f"DELETE FROM outcomes WHERE cycle_id IN ({qmarks})", cycle_ids)
+            self.db.execute("DELETE FROM cycles WHERE run_id=?", (self.run_id,))
+            self.db.execute("DELETE FROM interventions WHERE run_id=?", (self.run_id,))
+            self.db.execute("DELETE FROM metrics WHERE run_id=?", (self.run_id,))
+            self.db.commit()
+
     # -- run lifecycle -----------------------------------------------------------
 
     def start_run(self, seed: int, config_json: str, notes: str = "") -> str:

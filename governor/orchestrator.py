@@ -104,6 +104,13 @@ class Orchestrator:
 
     # -- public -------------------------------------------------------------------
 
+    def reset_state(self) -> None:
+        """Forget in-flight/pending cycle state after a world reset (paired with
+        notebook.clear_run so the fresh world has no stale evolution history)."""
+        self._last_promotion = None
+        self.last_cycle_end_tick = self.runner.world.tick
+        self.status = CycleStatus()
+
     def run_cycle_async(self) -> bool:
         """Fire a cycle on a worker thread; returns False if one is already running."""
         if self._busy.locked():

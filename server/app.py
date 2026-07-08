@@ -41,11 +41,11 @@ class InstallBody(BaseModel):
     source: str
 
 
-def create_app(seed: int = 424242, world_size: int = 256) -> FastAPI:
+def create_app(seed: int = 424242, world_size: int = 256, topology: str = "cube") -> FastAPI:
     sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
     # cube world: six folded faces (a planet), edges join seamlessly. 256/face x6
     # ≈ the surface area of the old 640 flat world but far cheaper to step & stream.
-    runner = EngineRunner(WorldConfig(seed=seed, size=world_size, topology="cube"),
+    runner = EngineRunner(WorldConfig(seed=seed, size=world_size, topology=topology),
                           plugin_sources=sources)
 
     @contextlib.asynccontextmanager
@@ -111,6 +111,11 @@ def create_app(seed: int = 424242, world_size: int = 256) -> FastAPI:
     @app.post("/api/control/reset")
     def control_reset() -> dict:
         runner.reset()
+        # a fresh world starts with a clean notebook — wipe the old run's cycles
+        orch = getattr(app.state, "orchestrator", None)
+        if orch is not None:
+            orch.notebook.clear_run()
+            orch.reset_state()
         return runner.state()
 
     @app.post("/api/control/speed")

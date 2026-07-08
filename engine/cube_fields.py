@@ -44,6 +44,69 @@ def _noise_stack(rng: np.random.Generator, size: int, octaves: int) -> np.ndarra
     return acc.astype(np.float32)
 
 
+def _cube_positions(size: int) -> np.ndarray:
+    """3D cube-surface position of every face cell center, shape (6, size, size, 3).
+
+    Uses the same face basis and cell-center sampling as engine/cube.py, so faces
+    sharing an edge sample nearly-coincident 3D points there."""
+    from engine.cube import FACES
+    g = (np.arange(size) + 0.5) / size
+    gu = g[:, None]              # varies along axis 0 (gx)
+    gv = g[None, :]              # varies along axis 1 (gy)
+    pos = np.zeros((NF, size, size, 3), dtype=np.float64)
+    for f in range(NF):
+        face = FACES[f]
+        c = face.corner.astype(np.float64)
+        r = face.r.astype(np.float64)
+        u = face.u.astype(np.float64)
+        pos[f] = (c[None, None, :]
+                  + gu[..., None] * 2.0 * r[None, None, :]
+                  + gv[..., None] * 2.0 * u[None, None, :])
+    return pos
+
+
+def _trilerp(lattice: np.ndarray, uvw: np.ndarray) -> np.ndarray:
+    """Vectorized trilinear sample of a (res+1)^3 lattice at points uvw in [0,res]."""
+    res = lattice.shape[0] - 1
+    p = np.clip(uvw, 0.0, res - 1e-6)
+    i = p.astype(np.int64)
+    fr = p - i
+    i0, j0, k0 = i[..., 0], i[..., 1], i[..., 2]
+    i1, j1, k1 = i0 + 1, j0 + 1, k0 + 1
+    fu, fv, fw = fr[..., 0], fr[..., 1], fr[..., 2]
+
+    def L(a, b, c):  # noqa: E741 — lattice corner lookup
+        return lattice[a, b, c]
+
+    c00 = L(i0, j0, k0) * (1 - fu) + L(i1, j0, k0) * fu
+    c01 = L(i0, j0, k1) * (1 - fu) + L(i1, j0, k1) * fu
+    c10 = L(i0, j1, k0) * (1 - fu) + L(i1, j1, k0) * fu
+    c11 = L(i0, j1, k1) * (1 - fu) + L(i1, j1, k1) * fu
+    c0 = c00 * (1 - fv) + c10 * fv
+    c1 = c01 * (1 - fv) + c11 * fv
+    return c0 * (1 - fw) + c1 * fw
+
+
+def _surface_noise_stack(rng: np.random.Generator, size: int, octaves: int) -> np.ndarray:
+    """Coherent noise on the cube SURFACE: a single 3D fractal sampled at every
+    face cell's 3D position. Adjacent faces share edge positions, so the field is
+    continuous across seams by construction — no per-face cliffs. Shape (6,S,S)."""
+    pos = _cube_positions(size)          # (6,S,S,3) in [-1,1]^3
+    acc = np.zeros((NF, size, size), dtype=np.float64)
+    amp, total = 1.0, 0.0
+    for o in range(octaves):
+        res = 4 * (2 ** o)
+        lattice = rng.random((res + 1, res + 1, res + 1))
+        uvw = (pos + 1.0) * 0.5 * res     # map [-1,1] -> [0,res]
+        acc += amp * _trilerp(lattice, uvw)
+        total += amp
+        amp *= 0.5
+    acc /= total
+    acc -= acc.min()
+    acc /= max(float(acc.max()), 1e-12)
+    return acc.astype(np.float32)
+
+
 class CubeTerrain:
     FIELDS = ("height", "water_mask", "water_table", "fertility", "minerals", "aquifer")
 
@@ -55,8 +118,10 @@ class CubeTerrain:
     @classmethod
     def generate(cls, rng, size, octaves, sea_level_quantile) -> CubeTerrain:
         t = cls()
-        t.height = _noise_stack(rng, size, octaves)
-        sea = np.quantile(t.height, sea_level_quantile, axis=(-2, -1), keepdims=True)
+        # coherent 3D surface noise -> terrain is continuous across face seams
+        t.height = _surface_noise_stack(rng, size, octaves)
+        # one planet-wide sea level so oceans span faces (not a per-face quantile)
+        sea = float(np.quantile(t.height, sea_level_quantile))
         t.water_mask = (t.height <= sea).astype(np.float32)
         t.water_table = np.clip(1.0 - (t.height - sea) * 2.0, 0.0, 1.0).astype(np.float32)
         t.water_table = _blur(t.water_table, passes=2).astype(np.float32)

@@ -12,7 +12,7 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "bird", size=0.7, color="#7fd4ff", speed=1.6,
+        "bird", size=0.5, color="#7fd4ff", speed=0.9,
         strata=(world.SKY,), props=("phase", "heading"),
     )
     for _ in range(120):

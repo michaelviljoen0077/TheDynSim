@@ -34,7 +34,15 @@ class World:
         self.store = EntityStore(config.initial_capacity, config.max_prop_slots)
         self.commands = CommandBuffer()
         self.geom = CubeGeometry(config.size) if config.cube else None
-        self.spatial = SpatialHash(float(config.size), wrap=config.wrap, faced=config.cube)
+        # cube queries use a global 3D index (seamless across faces); flat/wrap
+        # use the 2D grid hash (with toroidal wrap for "wrap")
+        if config.cube:
+            from engine.spatial3d import Spatial3D
+            self.spatial3d: Spatial3D | None = Spatial3D(config.size)
+            self.spatial = None
+        else:
+            self.spatial = SpatialHash(float(config.size), wrap=config.wrap)
+            self.spatial3d = None
         # plugin machinery placeholders (Epic 2) — snapshot-complete from day one
         self.plugin_rngs: dict[str, np.random.Generator] = {}
         self.plugin_stores: dict[str, dict[str, float | int | str]] = {}
@@ -105,7 +113,10 @@ class World:
         if self.tick % self.config.field_step_every == 0:
             self.weather.step(self.rng, self.terrain, self.day_frac, self.season_frac)
             self.flora.step(self.terrain, self.weather, self.season_frac)
-        self.spatial.rebuild(self.store)
+        if self.geom is not None:
+            self.spatial3d.rebuild(self.store)
+        else:
+            self.spatial.rebuild(self.store)
         for hook in self.tick_hooks:  # PluginHost.on_tick attaches here (Epic 2)
             hook(self)
         self.commands.apply(self.store, float(self.config.size), self._predation_marks,
@@ -176,7 +187,7 @@ class World:
         # per-cell same-species density (vectorized): key = (species, stratum, cell).
         # The spatial cell (~8) is close to crowding_radius, so same-cell count is a
         # cheap, O(n) proxy for local density — no per-entity neighbour scan.
-        cell = max(cfg.crowding_radius, self.spatial.cell)
+        cell = max(cfg.crowding_radius, self.spatial.cell if self.spatial else 8.0)
         gx = (store.px[alive] / cell).astype(np.int64)
         gy = (store.py[alive] / cell).astype(np.int64)
         ncell = int(self.config.size / cell) + 2

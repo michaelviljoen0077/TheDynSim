@@ -56,6 +56,34 @@ FACES: tuple[Face, ...] = (
 )
 
 
+# Vectorized face basis, indexed by face id — for fast 3D positioning of many
+# entities at once (Spatial3D). Scale is such that a face spans `size` world
+# units, so 3D distances near a face are comparable to face-local distances.
+_CORNERS = np.array([f.corner for f in FACES], dtype=np.float64)   # (6,3)
+_RVEC = np.array([f.r for f in FACES], dtype=np.float64)           # (6,3)
+_UVEC = np.array([f.u for f in FACES], dtype=np.float64)           # (6,3)
+
+
+def positions_3d(faces: np.ndarray, xs: np.ndarray, ys: np.ndarray, size: int) -> np.ndarray:
+    """(face,x,y) for many entities -> 3D points on the cube, shape (n,3).
+
+    Half-width size/2, so a face spans `size` units and a 3D radius matches a
+    face-local radius near a face centre. This is the single global coordinate
+    space in which entity neighbour queries happen — no face special-casing."""
+    c = _CORNERS[faces]
+    r = _RVEC[faces]
+    u = _UVEC[faces]
+    fu = (xs / size)[:, None]
+    fv = (ys / size)[:, None]
+    return (size * 0.5) * (c + fu * 2.0 * r + fv * 2.0 * u)
+
+
+def face_basis(face: int) -> tuple[np.ndarray, np.ndarray]:
+    """The (r, u) unit tangent axes of a face — for projecting a 3D direction
+    back into that face's local (dx, dy) movement frame."""
+    return _RVEC[face], _UVEC[face]
+
+
 def _to_cube(face: int, fu: float, fv: float) -> np.ndarray:
     """Face-local normalized coords (fu, fv in [0,1]) -> 3D point on the cube."""
     f = FACES[face]

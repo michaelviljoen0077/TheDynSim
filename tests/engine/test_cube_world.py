@@ -1,10 +1,12 @@
-"""Cube topology at the World level (Layer 2): entities carry a face, movement
-folds across face edges, queries are face-local, and it all survives snapshots."""
+"""Cube topology at the World level: entities carry a face, movement folds across
+face edges, neighbour queries are GLOBAL 3D (seamless across faces), and it all
+survives snapshots."""
 
 import numpy as np
 
 from engine import World, WorldConfig, load_snapshot, save_snapshot, state_hash
 from engine.entities import SURFACE, handle_index
+from engine.world_api import WorldAPI
 
 
 def cube_world(seed=1, size=48):
@@ -15,7 +17,7 @@ def test_world_builds_cube_geometry():
     w = cube_world()
     assert w.config.cube
     assert w.geom is not None
-    assert w.spatial.faced
+    assert w.spatial3d is not None and w.spatial is None
 
 
 def test_entities_traverse_faces_and_stay_in_bounds():
@@ -42,16 +44,40 @@ def test_entities_traverse_faces_and_stay_in_bounds():
     assert len(faces_seen[handle_index(handles[0])]) > 1
 
 
-def test_queries_are_face_local():
-    w = cube_world()
+def test_queries_are_global_3d_across_seams():
+    """The whole point of the 3D index: a query finds neighbours on an ADJACENT
+    face when they're physically near across the shared edge, but not entities
+    that are merely at the same face-local (x,y) on a far face."""
+    w = cube_world(size=48)
     sp = w.registry.register("bug")
-    # same (x,y) on two different faces — must NOT see each other
-    a = w.store.spawn(sp.id, 24.0, 24.0, 0.0, SURFACE, 100.0, face=0)
-    w.store.spawn(sp.id, 24.0, 24.0, 0.0, SURFACE, 100.0, face=1)
-    w.spatial.rebuild(w.store)
-    near = w.spatial.nearest(w.store, 24.0, 24.0, 10.0, SURFACE, species_id=sp.id,
-                             exclude_row=handle_index(a), face=0)
-    assert near == -1  # the face-1 entity is invisible from face 0
+    api = WorldAPI(w, "p", 0, ["bug"])
+    S = w.config.size
+    # A near face 0's +x edge; B just across it on face 1 (near face 1's -x edge).
+    a = w.store.spawn(sp.id, S - 1.0, 24.0, 0.0, SURFACE, 100.0, face=0)
+    b = w.store.spawn(sp.id, 1.0, 24.0, 0.0, SURFACE, 100.0, face=1)
+    # C at the SAME face-local (x,y) as A but on the opposite face 2 — physically far.
+    w.store.spawn(sp.id, S - 1.0, 24.0, 0.0, SURFACE, 100.0, face=2)
+    w.spatial3d.rebuild(w.store)
+    near = api.nearest(a, species="bug", radius=6.0)
+    assert near == b  # sees B across the seam, not the far-face C
+    assert world_dist_ok(w, handle_index(a), handle_index(b))
+
+
+def world_dist_ok(w, ra, rb):
+    return w.spatial3d.distance(ra, rb) < 6.0
+
+
+def test_direction_to_points_across_a_seam():
+    w = cube_world(size=48)
+    sp = w.registry.register("bug", speed=4.0)
+    api = WorldAPI(w, "p", 0, ["bug"])
+    S = w.config.size
+    a = w.store.spawn(sp.id, S - 1.5, 24.0, 0.0, SURFACE, 100.0, face=0)
+    b = w.store.spawn(sp.id, 1.5, 24.0, 0.0, SURFACE, 100.0, face=1)
+    w.spatial3d.rebuild(w.store)
+    dx, dy = api.direction_to(a, b)
+    # B is across A's +x edge, so the heading should be predominantly +x
+    assert dx > 0.5 and abs(dy) < 0.5
 
 
 def test_cube_determinism_and_snapshot(tmp_path):
@@ -123,10 +149,11 @@ def test_example_food_chain_runs_on_a_cube():
         host.install((examples / p).read_text())
     gid = w.registry.by_name["grazer"].id
     wid = w.registry.by_name["wolf"].id
-    w.run(1500)
+    w.run(2500)
     assert w.store.alive_indices(gid).size > 0, "grazers went extinct on the cube"
     assert w.store.alive_indices(wid).size > 0, "wolves went extinct on the cube"
-    # creatures have spread beyond the founder face (0) onto other faces
+    # populations spread beyond the founder face over time (cross-face movement
+    # is exercised directly in test_entities_traverse_faces_and_stay_in_bounds)
     faces_used = set(w.store.face[w.store.alive_indices(gid)].tolist())
     assert len(faces_used) > 1, "grazers never migrated off the founder face"
     # no plugin errored

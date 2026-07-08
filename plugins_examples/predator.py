@@ -10,7 +10,7 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "wolf", size=1.4, color="#8a4a4a", speed=1.9, swim_speed=0.9, lifespan=6000,
+        "wolf", size=0.9, color="#8a4a4a", speed=1.05, swim_speed=0.6, lifespan=6000,
         strata=(world.SURFACE,), props=("gestation",),
     )
     # spawn near the herds: on a large sparse world a randomly-placed wolf can
@@ -52,19 +52,18 @@ def on_tick(world):
                        best_dy / 2.0 + world.rng.uniform(-0.3, 0.3))
             continue
 
-        # wide scent radius so a pack reliably finds prey on its face; when a face
-        # empties, roam in long strides to migrate toward prey on neighbouring faces
-        prey = world.nearest(wolf, species="grazer", radius=45.0)
+        # 3D global queries find prey across face seams, so a modest scent radius
+        # suffices; direction_to steers correctly even when the prey is on another
+        # face, and distance() is the true 3D range.
+        prey = world.nearest(wolf, species="grazer", radius=22.0)
         if prey is not None:
-            px, py, _pz = world.pos(prey)
-            dx, dy = world.wrap_delta(x, px), world.wrap_delta(y, py)  # pursue, seam-aware
-            d = (dx * dx + dy * dy) ** 0.5
-            if d < 1.8:
+            if world.distance(wolf, prey) < 1.6:
                 energy += world.attack(prey, 60.0) * 0.8
             else:
-                world.move(wolf, dx / d * 1.7, dy / d * 1.7)
+                dx, dy = world.direction_to(wolf, prey)
+                world.move(wolf, dx, dy)
         else:
-            world.move(wolf, world.rng.uniform(-2.4, 2.4), world.rng.uniform(-2.4, 2.4))
+            world.move(wolf, world.rng.uniform(-1.0, 1.0), world.rng.uniform(-1.0, 1.0))
 
         world.set(wolf, "energy", min(energy, 300.0))
 

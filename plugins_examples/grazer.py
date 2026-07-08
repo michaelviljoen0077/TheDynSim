@@ -10,7 +10,7 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "grazer", size=1.0, color="#c9a35c", speed=1.8, lifespan=4500,
+        "grazer", size=0.7, color="#c9a35c", speed=0.9, lifespan=4500,
         strata=(world.SURFACE,), props=("gestation",),
     )
     for _ in range(140):
@@ -44,13 +44,11 @@ def on_tick(world):
         world.set(grazer, "energy", min(energy, 200.0))
         # energy <= 0 is handled by the engine death sweep
 
-        threat = world.nearest(grazer, species="wolf", radius=8.0) if wolves_exist else None
+        threat = world.nearest(grazer, species="wolf", radius=9.0) if wolves_exist else None
         if threat is not None:
-            tx, ty, _tz = world.pos(threat)
-            dx, dy = -world.wrap_delta(x, tx), -world.wrap_delta(y, ty)  # flee, seam-aware
-            d = (dx * dx + dy * dy) ** 0.5 or 1.0
-            world.move(grazer, dx / d * 1.7 + world.rng.uniform(-0.3, 0.3),
-                       dy / d * 1.7 + world.rng.uniform(-0.3, 0.3))
+            dx, dy = world.direction_to(grazer, threat)  # seam-aware; flee = away
+            world.move(grazer, -dx + world.rng.uniform(-0.2, 0.2),
+                       -dy + world.rng.uniform(-0.2, 0.2))
             continue
 
         # sleep cycle: rest at local night (barely move, graze in place). The
@@ -61,16 +59,13 @@ def on_tick(world):
 
         neighbour = world.nearest(grazer, species="grazer", radius=6.0)
         if neighbour is not None:
-            nx, ny, _nz = world.pos(neighbour)
-            dx, dy = -world.wrap_delta(x, nx), -world.wrap_delta(y, ny)  # disperse, seam-aware
-            d = (dx * dx + dy * dy) ** 0.5
-            if d > 0.0:
-                world.move(grazer, dx / d * 0.6 + world.rng.uniform(-0.6, 0.6),
-                           dy / d * 0.6 + world.rng.uniform(-0.6, 0.6))
-                continue
-        speed = 1.6 if world.flora_at(x, y, f) < 0.1 else 0.9
-        world.move(grazer, world.rng.uniform(-1, 1) * speed,
-                   world.rng.uniform(-1, 1) * speed)
+            dx, dy = world.direction_to(grazer, neighbour)  # disperse from crowd
+            world.move(grazer, -dx * 0.6 + world.rng.uniform(-0.5, 0.5),
+                       -dy * 0.6 + world.rng.uniform(-0.5, 0.5))
+            continue
+        roam = 1.0 if world.flora_at(x, y, f) < 0.1 else 0.5
+        world.move(grazer, world.rng.uniform(-1, 1) * roam,
+                   world.rng.uniform(-1, 1) * roam)
 
         # Reproduction takes TIME and happens ONE pregnancy at a time (the
         # gestation prop is a single countdown — a pregnant grazer can't start

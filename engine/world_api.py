@@ -11,6 +11,8 @@ notebook consume (FR8).
 
 from __future__ import annotations
 
+import numpy as np
+
 from engine.core import World
 from engine.entities import GEN_BITS, SKY, SURFACE, UNDERGROUND
 
@@ -205,10 +207,13 @@ class WorldAPI:
         s = self._world.store
         sp_id = self._species(species).id if species is not None else None
         st = int(s.stratum[row]) if stratum is None else int(stratum)
-        j = self._world.spatial.nearest(
-            s, float(s.px[row]), float(s.py[row]), float(radius),
-            st, species_id=sp_id, exclude_row=row, face=int(s.face[row]),
-        )
+        if self._world.geom is not None:  # cube: seamless 3D query across faces
+            j = self._world.spatial3d.nearest(s, row, float(radius), st, species_id=sp_id)
+        else:
+            j = self._world.spatial.nearest(
+                s, float(s.px[row]), float(s.py[row]), float(radius),
+                st, species_id=sp_id, exclude_row=row, face=int(s.face[row]),
+            )
         if j < 0:
             return None
         return (j << GEN_BITS) | int(s.generation[j])
@@ -219,11 +224,51 @@ class WorldAPI:
         s = self._world.store
         sp_id = self._species(species).id if species is not None else None
         st = int(s.stratum[row]) if stratum is None else int(stratum)
-        rows = self._world.spatial.within(
-            s, float(s.px[row]), float(s.py[row]), float(radius),
-            st, species_id=sp_id, exclude_row=row, face=int(s.face[row]),
-        )
+        if self._world.geom is not None:  # cube: seamless 3D query across faces
+            rows = self._world.spatial3d.within(s, row, float(radius), st, species_id=sp_id)
+        else:
+            rows = self._world.spatial.within(
+                s, float(s.px[row]), float(s.py[row]), float(radius),
+                st, species_id=sp_id, exclude_row=row, face=int(s.face[row]),
+            )
         return [(j << GEN_BITS) | int(s.generation[j]) for j in rows]
+
+    def direction_to(self, handle: int, target: int) -> tuple[float, float]:
+        """Unit (dx, dy) in the CALLER's local frame that heads toward `target`,
+        correct across face seams on the cube (project the 3D direction onto the
+        caller's face tangents). On flat/wrap it's the seam-aware planar direction.
+        Use it to pursue/flee prey that `nearest` found on another face."""
+        a = self._row(handle)
+        b = self._row(target)
+        s = self._world.store
+        if self._world.geom is not None:
+            from engine.cube import face_basis, positions_3d
+            sp3 = self._world.spatial3d
+            pa = sp3.pos_of(a)
+            pb = sp3.pos_of(b)
+            if pa is None or pb is None:
+                p = positions_3d(s.face[[a, b]], s.px[[a, b]], s.py[[a, b]], self._world.config.size)
+                pa, pb = tuple(p[0]), tuple(p[1])
+            d = np.array([pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]])
+            r, u = face_basis(int(s.face[a]))
+            dx, dy = float(d @ r), float(d @ u)
+        else:
+            dx = self.wrap_delta(float(s.px[a]), float(s.px[b]))
+            dy = self.wrap_delta(float(s.py[a]), float(s.py[b]))
+        mag = (dx * dx + dy * dy) ** 0.5
+        return (dx / mag, dy / mag) if mag > 1e-9 else (0.0, 0.0)
+
+    def distance(self, handle: int, target: int) -> float:
+        """Distance between two entities — true 3D (great-circle-ish) on the cube,
+        seam-aware planar on flat/wrap."""
+        a = self._row(handle)
+        b = self._row(target)
+        s = self._world.store
+        if self._world.geom is not None:
+            return self._world.spatial3d.distance(a, b)
+        dx = self.wrap_delta(float(s.px[a]), float(s.px[b]))
+        dy = self.wrap_delta(float(s.py[a]), float(s.py[b]))
+        return (dx * dx + dy * dy) ** 0.5
 
     # -- mutations (command-buffered) ---------------------------------------------
 

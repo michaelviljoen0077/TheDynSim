@@ -93,9 +93,15 @@ def load_snapshot(path: str | Path) -> World:
     world.rng.bit_generator.state = header["rng_state"]
     world.registry = SpeciesRegistry.from_state(header["species"], config.max_prop_slots)
     world.store = EntityStore.from_arrays(arrays, config.max_prop_slots)
-    world.terrain = Terrain.from_arrays(arrays)
-    world.weather = Weather.from_arrays(arrays, config.size)
-    world.flora = Flora.from_arrays(arrays, config.size)
+    if config.cube:
+        from engine.cube_fields import CubeFlora, CubeTerrain, CubeWeather
+        world.terrain = CubeTerrain.from_arrays(arrays)
+        world.weather = CubeWeather.from_arrays(arrays, config.size)
+        world.flora = CubeFlora.from_arrays(arrays, config.size)
+    else:
+        world.terrain = Terrain.from_arrays(arrays)
+        world.weather = Weather.from_arrays(arrays, config.size)
+        world.flora = Flora.from_arrays(arrays, config.size)
     for name, state in header["plugin_rng_states"].items():
         g = np.random.default_rng()
         g.bit_generator.state = state

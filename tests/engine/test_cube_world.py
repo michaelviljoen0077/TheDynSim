@@ -98,3 +98,36 @@ def test_flat_world_unaffected():
     w.commands.move(h, 5.0, 0.0)
     w.step()
     assert w.store.px[handle_index(h)] == 15.0
+
+
+def test_per_face_terrain_is_distinct_and_stateful():
+    w = cube_world(seed=5, size=48)
+    t = w.terrain
+    assert t.height.shape == (6, 48, 48)
+    # faces are independently generated — not copies of each other
+    assert not np.array_equal(t.height[0], t.height[1])
+    assert not np.array_equal(t.height[2], t.height[3])
+    # flora is per-face and grows independently
+    w.run(60)
+    assert w.flora.density.shape == (6, 48, 48)
+
+
+def test_example_food_chain_runs_on_a_cube():
+    from pathlib import Path
+
+    from engine.plugin_host import PluginHost
+    examples = Path(__file__).resolve().parents[2] / "plugins_examples"
+    w = World(WorldConfig(seed=3, size=64, topology="cube", initial_capacity=8192))
+    host = PluginHost(w)
+    for p in ("grazer.py", "predator.py", "birds.py"):
+        host.install((examples / p).read_text())
+    gid = w.registry.by_name["grazer"].id
+    wid = w.registry.by_name["wolf"].id
+    w.run(1500)
+    assert w.store.alive_indices(gid).size > 0, "grazers went extinct on the cube"
+    assert w.store.alive_indices(wid).size > 0, "wolves went extinct on the cube"
+    # creatures have spread beyond the founder face (0) onto other faces
+    faces_used = set(w.store.face[w.store.alive_indices(gid)].tolist())
+    assert len(faces_used) > 1, "grazers never migrated off the founder face"
+    # no plugin errored
+    assert all(r.error_count == 0 for r in host.plugins.values()), host.state()

@@ -49,11 +49,19 @@ class World:
         self._drowning_marks: set[int] = set()    # transient within a tick
         self._crowding_marks: set[int] = set()    # transient within a tick
         if _generate:
-            self.terrain = Terrain.generate(
-                self.rng, config.size, config.terrain_octaves, config.sea_level_quantile
-            )
-            self.weather = Weather(config.size)
-            self.flora = Flora.generate(self.rng, config.size, self.terrain)
+            if config.cube:
+                from engine.cube_fields import CubeFlora, CubeTerrain, CubeWeather
+                self.terrain = CubeTerrain.generate(
+                    self.rng, config.size, config.terrain_octaves, config.sea_level_quantile
+                )
+                self.weather = CubeWeather(config.size)
+                self.flora = CubeFlora.generate(self.rng, config.size, self.terrain)
+            else:
+                self.terrain = Terrain.generate(
+                    self.rng, config.size, config.terrain_octaves, config.sea_level_quantile
+                )
+                self.weather = Weather(config.size)
+                self.flora = Flora.generate(self.rng, config.size, self.terrain)
 
     # -- clock ---------------------------------------------------------------
 
@@ -114,7 +122,10 @@ class World:
             return
         ix = store.px[rows].astype(np.int32)
         iy = store.py[rows].astype(np.int32)
-        on_water = self.terrain.water_mask[ix, iy] > 0.5
+        if self.geom is not None:
+            on_water = self.terrain.water_mask[store.face[rows], ix, iy] > 0.5
+        else:
+            on_water = self.terrain.water_mask[ix, iy] > 0.5
         if not np.any(on_water):
             return
         wet = rows[on_water]
@@ -148,6 +159,8 @@ class World:
         ncell = int(self.config.size / cell) + 2
         key = ((store.species_id[alive].astype(np.int64) * 4 + store.stratum[alive])
                * ncell * ncell + gx * ncell + gy)
+        if self.geom is not None:  # keep faces from cross-counting as crowding
+            key = key * 6 + store.face[alive].astype(np.int64)
         _uniq, inverse, counts = np.unique(key, return_inverse=True, return_counts=True)
         density = counts[inverse]                       # neighbours+self sharing the cell
         excess = density - 1 - cfg.crowding_softcap     # exclude self

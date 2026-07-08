@@ -27,7 +27,7 @@ class CommandBuffer:
     ops: list[tuple] = field(default_factory=list)
     stale_ops: int = 0
     spawned_handles: list[int] = field(default_factory=list)
-    flora_bites: list[tuple[int, int, float]] = field(default_factory=list)
+    flora_bites: list[tuple[int, int, int, float]] = field(default_factory=list)  # (face,ix,iy,amt)
 
     def spawn(self, species_id: int, x: float, y: float, z: float,
               stratum: int, energy: float, plugin_id: int = -1, face: int = 0) -> None:
@@ -54,12 +54,12 @@ class CommandBuffer:
         overwritten by the victim plugin's buffered write."""
         self.ops.append((OP_DRAIN_ENERGY, handle, amount))
 
-    def eat_flora(self, ix: int, iy: int, amount: float) -> None:
+    def eat_flora(self, ix: int, iy: int, amount: float, face: int = 0) -> None:
         """Buffered flora consumption: the caller's returned bite is an estimate
         against tick-start density (like `attack`); the field is drained here at
         tick end, in submission order and clamped, so grazers see tick-start state
         and the grass can never be over-consumed."""
-        self.flora_bites.append((ix, iy, amount))
+        self.flora_bites.append((face, ix, iy, amount))
 
     def apply(self, store: EntityStore, world_max: float,
               predation_marks: set[int] | None = None,
@@ -156,7 +156,10 @@ class CommandBuffer:
                 if water is not None and swim_speeds is not None:
                     ix = xs[rows].astype(np.int32)
                     iy = ys[rows].astype(np.int32)
-                    on_water = water[ix, iy] > 0.5
+                    if geom is not None:      # per-face water mask
+                        on_water = water[store.face[rows], ix, iy] > 0.5
+                    else:
+                        on_water = water[ix, iy] > 0.5
                     sw = swim_speeds[store.species_id[rows]]
                     limit = np.where(on_water & (sw > 0.0), sw, limit)
                 over = dist > limit
@@ -194,8 +197,13 @@ class CommandBuffer:
             ys[rows] = vals[:, 1]
             zs[rows] = vals[:, 2]
         if flora is not None and self.flora_bites:
-            for ix, iy, amount in self.flora_bites:
-                avail = float(flora[ix, iy])
-                flora[ix, iy] = avail - min(avail, amount)
+            if geom is not None:  # (face, ix, iy) drain
+                for fc, ix, iy, amount in self.flora_bites:
+                    avail = float(flora[fc, ix, iy])
+                    flora[fc, ix, iy] = avail - min(avail, amount)
+            else:
+                for _fc, ix, iy, amount in self.flora_bites:
+                    avail = float(flora[ix, iy])
+                    flora[ix, iy] = avail - min(avail, amount)
         self.flora_bites.clear()
         self.ops.clear()

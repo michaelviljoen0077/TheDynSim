@@ -260,14 +260,19 @@ class WorldAPI:
         return drained
 
     # -- environment ---------------------------------------------------------------
+    # env reads take a `face` (0 for flat/wrap). On a cube, pass world.face(handle)
+    # so a creature reads the terrain of the face it's actually standing on.
 
-    def flora_at(self, x: float, y: float) -> float:
+    def _cell(self, x: float, y: float) -> tuple[int, int]:
         size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
-        return float(self._world.flora.density[ix, iy])
+        return min(max(int(x), 0), size - 1), min(max(int(y), 0), size - 1)
 
-    def eat_flora(self, x: float, y: float, amount: float) -> float:
+    def flora_at(self, x: float, y: float, face: int = 0) -> float:
+        ix, iy = self._cell(x, y)
+        d = self._world.flora.density
+        return float(d[face, ix, iy] if self._world.geom is not None else d[ix, iy])
+
+    def eat_flora(self, x: float, y: float, amount: float, face: int = 0) -> float:
         """Consume flora at (x, y); returns the bite estimated against tick-start density.
 
         The drain is command-buffered and applied at tick end (in submission order,
@@ -275,25 +280,23 @@ class WorldAPI:
         the tick, execution order can't leak between plugins, and the grass can
         never be over-consumed.
         """
-        size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
-        avail = float(self._world.flora.density[ix, iy])
+        ix, iy = self._cell(x, y)
+        d = self._world.flora.density
+        avail = float(d[face, ix, iy] if self._world.geom is not None else d[ix, iy])
         bite = min(avail, max(0.0, float(amount)))
-        self._world.commands.eat_flora(ix, iy, bite)
+        self._world.commands.eat_flora(ix, iy, bite, int(face))
         return bite
 
-    def water_at(self, x: float, y: float) -> bool:
-        size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
-        return bool(self._world.terrain.water_mask[ix, iy] > 0.5)
+    def water_at(self, x: float, y: float, face: int = 0) -> bool:
+        ix, iy = self._cell(x, y)
+        m = self._world.terrain.water_mask
+        val = m[face, ix, iy] if self._world.geom is not None else m[ix, iy]
+        return bool(val > 0.5)
 
-    def height_at(self, x: float, y: float) -> float:
-        size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
-        return float(self._world.terrain.height[ix, iy])
+    def height_at(self, x: float, y: float, face: int = 0) -> float:
+        ix, iy = self._cell(x, y)
+        h = self._world.terrain.height
+        return float(h[face, ix, iy] if self._world.geom is not None else h[ix, iy])
 
     def weather(self) -> dict:
         w = self._world.weather
@@ -302,11 +305,10 @@ class WorldAPI:
             "precipitation": float(w.precipitation.mean()),
         }
 
-    def temperature_at(self, x: float, y: float) -> float:
-        size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
-        return float(self._world.weather.temperature[ix, iy])
+    def temperature_at(self, x: float, y: float, face: int = 0) -> float:
+        ix, iy = self._cell(x, y)
+        t = self._world.weather.temperature
+        return float(t[face, ix, iy] if self._world.geom is not None else t[ix, iy])
 
     def season(self) -> float:
         return self._world.season_frac
@@ -329,9 +331,14 @@ class WorldAPI:
         return d
 
     def random_surface_point(self) -> tuple[float, float]:
-        """A random non-water surface location, drawn from the plugin RNG."""
+        """A random non-water surface location, drawn from the plugin RNG.
+
+        On a cube this returns a point on face 0 (the founder face) — spawn there
+        and populations migrate across faces over time. Pass the resulting point
+        to spawn(); use face=0 (the default)."""
         size = self._world.config.size
-        land = self._world.terrain.land_points
+        terrain = self._world.terrain
+        land = terrain.land_points(0) if self._world.geom is not None else terrain.land_points
         i = int(self.rng.integers(0, len(land)))
         gx, gy = land[i]
         return (

@@ -58,7 +58,7 @@ def on_tick(world):
             if gestation <= 1.0 and pack_size < pack_cap:
                 pack_size += 1
                 world.spawn("wolf", x + world.rng.uniform(-2, 2), y + world.rng.uniform(-2, 2),
-                            stratum=world.SURFACE, energy=90.0)
+                            stratum=world.SURFACE, energy=90.0, face=world.face(wolf))
         elif energy > 190.0 and pack_size < pack_cap:
             world.set(wolf, "gestation", 60.0)
             world.set(wolf, "energy", energy - 55.0)

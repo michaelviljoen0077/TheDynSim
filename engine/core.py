@@ -96,6 +96,18 @@ class World:
     def season_frac(self) -> float:
         return (self.tick % self.config.ticks_per_year) / self.config.ticks_per_year
 
+    @property
+    def calendar(self) -> dict:
+        """1-based (year, month, day) elapsed since the run began."""
+        cfg = self.config
+        total_days = self.tick // cfg.ticks_per_day
+        day_of_year = total_days % cfg.days_per_year
+        return {
+            "year": total_days // cfg.days_per_year + 1,
+            "month": day_of_year // cfg.days_per_month + 1,
+            "day": day_of_year % cfg.days_per_month + 1,
+        }
+
     # -- plugin RNG streams (deterministic per (run_seed, plugin_name)) ------
 
     def plugin_rng(self, plugin_name: str) -> np.random.Generator:

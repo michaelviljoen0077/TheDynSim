@@ -33,6 +33,7 @@ export interface SimClock {
   dayFrac: number;
   seasonFrac: number;
   seasonIndex: number;
+  calendar?: { year: number; month: number; day: number };
 }
 
 export interface FrameInfo {

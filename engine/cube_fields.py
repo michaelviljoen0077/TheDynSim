@@ -21,14 +21,14 @@ _SUN /= np.linalg.norm(_SUN)
 
 
 def _blur(a: np.ndarray, passes: int = 1) -> np.ndarray:
-    """Box blur over the last two axes (per-face); leading face axis untouched."""
+    """Edge-CLAMPED box blur over the last two axes (per-face). Clamping (not
+    wrapping) matters on the cube: a wrap-blur leaks a face's opposite edge back
+    in, which shows as a flora/terrain seam artifact at the face boundary."""
     out = a
     for _ in range(passes):
-        out = (
-            out
-            + np.roll(out, 1, -2) + np.roll(out, -1, -2)
-            + np.roll(out, 1, -1) + np.roll(out, -1, -1)
-        ) / 5.0
+        p = np.pad(out, ((0, 0), (1, 1), (1, 1)), mode="edge")
+        out = (p[:, 1:-1, 1:-1] + p[:, :-2, 1:-1] + p[:, 2:, 1:-1]
+               + p[:, 1:-1, :-2] + p[:, 1:-1, 2:]) / 5.0
     return out
 
 
@@ -251,7 +251,9 @@ class CubeFlora:
     @classmethod
     def generate(cls, rng, size, terrain: CubeTerrain) -> CubeFlora:
         f = cls(size)
-        seedbed = _noise_stack(rng, size, 3) * terrain.fertility
+        # coherent surface noise (seamless across faces) * fertility, so the
+        # initial flora pattern has no per-face seam either
+        seedbed = _surface_noise_stack(rng, size, 3) * terrain.fertility
         f.density = np.clip(seedbed * 0.6 * (1.0 - terrain.water_mask), 0.0, 1.0).astype(np.float32)
         return f
 

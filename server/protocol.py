@@ -120,5 +120,6 @@ def frame_message(world: World, measured_tps: float) -> dict:
             "dayFrac": round(world.day_frac, 4),
             "seasonFrac": round(world.season_frac, 4),
             "seasonIndex": world.season_index,
+            "calendar": world.calendar,
         },
     }

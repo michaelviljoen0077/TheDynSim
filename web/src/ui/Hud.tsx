@@ -111,6 +111,17 @@ export function Hud() {
             </>
           )}
         </div>
+        {frame?.clock.calendar && (
+          <div className="clock-line calendar-line">
+            <span className="glyph">📅</span>
+            <span className="clock-time">
+              {`Y${frame.clock.calendar.year} · M${frame.clock.calendar.month} · D${frame.clock.calendar.day}`}
+            </span>
+            <span className="season">
+              {SEASONS[(frame?.clock.seasonIndex ?? 0) % SEASONS.length]}
+            </span>
+          </div>
+        )}
         <div className="stat-grid">
           <span className="k">temp</span>
           <span className="v">{w ? `${w.temp.toFixed(1)}°C` : '—'}</span>

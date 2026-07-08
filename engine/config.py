@@ -15,10 +15,12 @@ class WorldConfig:
     max_prop_slots: int = 8          # per-species named float slots
     field_step_every: int = 1        # step weather/flora every N ticks (perf: >1 on big cubes)
 
-    # clock — chosen so a 2,000-tick shadow run covers >= 1 day-night cycle
-    # and >= 1 season transition (shadow-horizon rule, docs/architecture.md)
+    # calendar: 600 ticks/day, 30 days/month, 4 seasons x 90 days = 360-day year.
+    # (Long enough that day/month/year read believably; seasons are slow — the
+    # "elliptical orbit" hand-wave.)
     ticks_per_day: int = 600
-    days_per_season: int = 3
+    days_per_month: int = 30
+    days_per_season: int = 90
     seasons_per_year: int = 4
 
     # terrain / hydrology
@@ -59,6 +61,10 @@ class WorldConfig:
     @property
     def ticks_per_year(self) -> int:
         return self.ticks_per_season * self.seasons_per_year
+
+    @property
+    def days_per_year(self) -> int:
+        return self.days_per_season * self.seasons_per_year
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True)

@@ -112,9 +112,15 @@ export function Entities() {
       ids[k] = curr.id[i];
       counters.set(spId, k + 1);
     }
+    const S = sync?.size ?? 64;
     map.forEach((m, id) => {
       m.count = counters.get(id) ?? 0;
       m.instanceMatrix.needsUpdate = true;
+      // refresh the raycast broad-phase sphere each frame (instances move, and
+      // three caches it once) so clicking a creature actually registers
+      if (!m.boundingSphere) m.boundingSphere = new THREE.Sphere();
+      m.boundingSphere.center.set(S / 2, 0, S / 2);
+      m.boundingSphere.radius = S * 1.5;
     });
   });
 

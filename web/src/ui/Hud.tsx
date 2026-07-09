@@ -280,9 +280,9 @@ export function Hud() {
             className="danger"
             disabled={activeGodSpecies === ''}
             onClick={() => god('cull', { species: activeGodSpecies })}
-            title={`Wipe out every ${activeGodSpecies}`}
+            title={`Cull half of all ${activeGodSpecies} (a population shock, not extinction)`}
           >
-            Cull
+            Cull ½
           </button>
         </div>
         <div className="god-row god-flora-row">

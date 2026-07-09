@@ -16,13 +16,14 @@ def client():
 def test_god_spawn_then_cull_a_species(client):
     r = client.post("/api/god/spawn", json={"species": "grazer", "count": 50}).json()
     assert r["spawned"] == 50
-    pops = client.get("/api/metrics").json()["populations"]
-    assert pops.get("grazer", 0) >= 50
+    before = client.get("/api/metrics").json()["populations"].get("grazer", 0)
+    assert before >= 50
 
+    # cull removes HALF (a shock, not extinction): survivors remain
     r2 = client.post("/api/god/cull", json={"species": "grazer"}).json()
-    assert r2["culled"] >= 50
-    pops2 = client.get("/api/metrics").json()["populations"]
-    assert pops2.get("grazer", 0) == 0  # smitten out of existence
+    assert r2["culled"] > 0
+    after = client.get("/api/metrics").json()["populations"].get("grazer", 0)
+    assert 0 < after < before
 
 
 def test_god_spawn_unknown_species_is_an_error(client):

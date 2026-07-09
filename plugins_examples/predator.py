@@ -58,6 +58,17 @@ def on_tick(world):
         # suffices; direction_to steers correctly even when the prey is on another
         # face, and distance() is the true 3D range.
         prey = world.nearest(wolf, species="grazer", radius=22.0)
+        prey_close = prey is not None and world.distance(wolf, prey) < 6.0
+
+        # NIGHT REST: predators don't hunt around the clock. A wolf beds down at its
+        # local night — barely moving, low metabolism (mild recovery) — unless a
+        # grazer is right on top of it (hunger/opportunity wakes it). Mirrors the
+        # grazer's sleep cycle, so both rest through the dark side of the planet.
+        if world.daylight(wolf) < -0.15 and not prey_close:
+            world.set(wolf, "energy", min(energy + 0.12, 300.0))  # resting burns little
+            world.move(wolf, world.rng.uniform(-0.15, 0.15), world.rng.uniform(-0.15, 0.15))
+            continue
+
         if prey is not None:
             if world.distance(wolf, prey) < 1.6:
                 energy += world.attack(prey, 60.0) * 0.8

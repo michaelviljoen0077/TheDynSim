@@ -128,6 +128,13 @@ export function CubeEntities() {
     map.forEach((m, id) => {
       m.count = counters.get(id) ?? 0;
       m.instanceMatrix.needsUpdate = true;
+      // Keep the raycast broad-phase sphere covering the whole globe. Three caches
+      // InstancedMesh.boundingSphere once; our instances move every frame, so the
+      // stale cached sphere would reject click rays before testing instances —
+      // that's why picking a creature silently did nothing. Refresh it each frame.
+      if (!m.boundingSphere) m.boundingSphere = new THREE.Sphere();
+      m.boundingSphere.center.set(0, 0, 0);
+      m.boundingSphere.radius = radius * 2;
     });
   });
 

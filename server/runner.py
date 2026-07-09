@@ -144,18 +144,20 @@ class EngineRunner:
         return {"spawned": spawned, "species": species}
 
     def god_cull(self, species: str) -> dict:
-        """Smite an entire species: remove every living member. If nothing
-        respawns it, the species goes extinct and its plugin is reaped."""
+        """Cull HALF of a species — a population shock, not an extinction event
+        (a random half is removed, so the survivors carry on and can recover)."""
         with self.lock:
             sp = self.world.registry.by_name.get(species)
             if sp is None:
                 return {"error": f"unknown species {species!r}"}
             store = self.world.store
             rows = store.alive_indices(sp.id)
-            for h in store.handles_of(rows):
-                store.remove(h)
-            removed = int(rows.size)
-        return {"culled": removed, "species": species}
+            n_remove = int(rows.size) // 2
+            if n_remove:
+                chosen = self._god_rng.choice(rows, size=n_remove, replace=False)
+                for h in store.handles_of(np.asarray(chosen)):
+                    store.remove(h)
+        return {"culled": n_remove, "species": species}
 
     def god_set_caps(self, enabled: bool) -> dict:
         """Toggle the engine population ceilings + crowding stress. Off = let

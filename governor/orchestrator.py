@@ -480,6 +480,12 @@ in the PREDATOR (it finds prey via world.nearest and eats via world.attack). To
 give an existing prey a new predator, MUTATE the predator so it hunts that prey —
 never write code inside a prey plugin that makes another species eat it.
 
+PERFORMANCE: when a species' members all behave alike, drive the whole herd with
+the BATCHED primitives (world.metabolize/graze/wander/breed) instead of a Python
+loop over world.entities — it is 2-3x faster and lets populations grow large. Use
+a per-entity loop only for genuinely conditional behaviour (fleeing, water
+avoidance), and still do the uniform parts in batch.
+
 Your candidate will be tested in a shadow simulation and scored on diversity,
 stability, extinction avoidance, trophic balance, and sustainability — RELATIVE to
 a control run without it. It must beat "do nothing" to be promoted. Your own

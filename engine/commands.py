@@ -29,6 +29,14 @@ class CommandBuffer:
     stale_ops: int = 0
     spawned_handles: list[int] = field(default_factory=list)
     flora_bites: list[tuple[int, int, int, float]] = field(default_factory=list)  # (face,ix,iy,amt)
+    # BATCH ops: a whole species processed at once by the engine primitives
+    # (world.metabolize/graze/wander/breed). Each holds numpy arrays and applies
+    # vectorized in apply(), so a plugin never loops per-entity in Python. Rows
+    # are entity indices, valid because the primitive queried them from tick-start
+    # alive state and batch ops apply BEFORE the per-op loop (no removals yet).
+    batch_energy: list[tuple] = field(default_factory=list)   # (rows, energy_deltas)
+    batch_moves: list[tuple] = field(default_factory=list)     # (rows, dx, dy)
+    batch_flora: list[tuple] = field(default_factory=list)     # (face, ix, iy, amount) arrays
 
     def spawn(self, species_id: int, x: float, y: float, z: float,
               stratum: int, energy: float, plugin_id: int = -1, face: int = 0) -> None:
@@ -65,6 +73,20 @@ class CommandBuffer:
         and the grass can never be over-consumed."""
         self.flora_bites.append((face, ix, iy, amount))
 
+    # -- batch ops (engine primitives) ----------------------------------------
+
+    def energy_delta_batch(self, rows: np.ndarray, deltas: np.ndarray) -> None:
+        """Add per-entity energy deltas (compose additively, so metabolize + graze
+        + breed on the same herd sum correctly instead of overwriting)."""
+        self.batch_energy.append((rows, deltas))
+
+    def move_batch(self, rows: np.ndarray, dx: np.ndarray, dy: np.ndarray) -> None:
+        self.batch_moves.append((rows, dx, dy))
+
+    def flora_bite_batch(self, face: np.ndarray, ix: np.ndarray, iy: np.ndarray,
+                         amount: np.ndarray) -> None:
+        self.batch_flora.append((face, ix, iy, amount))
+
     def apply(self, store: EntityStore, world_max: float,
               predation_marks: set[int] | None = None,
               flora: np.ndarray | None = None,
@@ -96,6 +118,28 @@ class CommandBuffer:
         xs = store.px
         ys = store.py
         zs = store.pz
+
+        # -- BATCH ops flush (engine primitives) --------------------------------
+        # Applied BEFORE the per-op loop: rows were queried from tick-start alive
+        # state and no OP_REMOVE has run yet, so every row is valid. Energy deltas
+        # compose additively (np.add.at handles repeats); a later predation drain
+        # in the op loop stacks on top, preserving "drain after the victim's writes".
+        for rows, deltas in self.batch_energy:
+            np.add.at(store.energy, rows, deltas)
+        for rows, dxa, dya in self.batch_moves:
+            txs = (xs[rows] + dxa).tolist()
+            tys = (ys[rows] + dya).tolist()
+            for r, tx, ty in zip(rows.tolist(), txs, tys, strict=True):
+                prev = moved.get(r)
+                if prev is None:
+                    moved[r] = (tx, ty, float(zs[r]))
+                else:  # compose with an earlier move on the same entity
+                    moved[r] = (prev[0] + (tx - float(xs[r])),
+                                prev[1] + (ty - float(ys[r])), prev[2])
+        for fa, ixa, iya, amta in self.batch_flora:
+            self.flora_bites.extend(zip(fa.tolist(), ixa.tolist(), iya.tolist(),
+                                        amta.tolist(), strict=True))
+
         for op in self.ops:
             kind = op[0]
             if kind == OP_SPAWN:
@@ -230,3 +274,6 @@ class CommandBuffer:
                     flora[ix, iy] = avail - min(avail, amount)
         self.flora_bites.clear()
         self.ops.clear()
+        self.batch_energy.clear()
+        self.batch_moves.clear()
+        self.batch_flora.clear()

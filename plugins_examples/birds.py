@@ -1,7 +1,7 @@
-"""Birds: seed-eating sky flock. They forage flora seeds from the ground below,
-starve without it, and reproduce modestly — a real (if light) part of the web."""
-
-import math
+"""Birds: seed-eating sky flock — the BATCHED-PRIMITIVE reference. Its whole tick
+is four vectorized herd calls (metabolize/graze/wander/breed) with NO per-entity
+Python loop, so a big flock costs almost nothing. This is the pattern to prefer
+for any species whose members all behave the same way."""
 
 PLUGIN_META = {
     "name": "sky_flock",
@@ -14,43 +14,21 @@ PLUGIN_META = {
 def setup(world):
     world.register_species(
         "bird", size=0.5, color="#7fd4ff", speed=0.9,
-        strata=(world.SKY,), props=("phase", "heading"),
+        strata=(world.SKY,), props=("heading",),
     )
     for _ in range(90):
         x, y = world.random_surface_point()
         world.spawn("bird", x, y, stratum=world.SKY, energy=110.0,
-                    z=2.0 + 4.0 * world.rng.random())
+                    z=3.0 + 3.0 * world.rng.random())
 
 
 def on_tick(world):
-    # PER-BIRD wandering heading (a shared flock heading piled them at face edges
-    # on the cube). Birds now peck seeds from vegetated ground below: they GAIN
-    # energy only over flora, lose it steadily, and starve where the land is
-    # barren — so a flock can't persist over a dead planet.
-    pop = world.count("bird")
-    for bird in world.entities("bird"):
-        energy = world.get(bird, "energy") - 0.04
-        x, y, z = world.pos(bird)
-        f = world.face(bird)
-
-        if world.flora_at(x, y, f) > 0.02:      # seeds below: forage (light)
-            energy += world.eat_flora(x, y, 0.01, f) * 45.0
-        world.set(bird, "energy", min(energy, 150.0))
-        # energy <= 0 -> engine death sweep (starvation)
-
-        heading = world.get(bird, "heading")
-        if heading == 0.0:  # unset (new bird): pick one
-            heading = world.rng.uniform(0.1, 6.28)
-        heading += world.rng.uniform(-0.15, 0.15)  # gentle wander
-        world.set(bird, "heading", heading)
-        phase = world.get(bird, "phase") + 0.12
-        world.set(bird, "phase", phase)
-        target_z = 4.0 + 2.0 * math.sin(phase)
-        world.move(bird, math.cos(heading) * 0.9, math.sin(heading) * 0.9,
-                   (target_z - z) * 0.1)
-
-        if energy > 125.0 and pop < 300:        # modest, capped breeding
-            pop += 1
-            world.set(bird, "energy", energy * 0.5)
-            world.spawn("bird", x, y, stratum=world.SKY, energy=energy * 0.5,
-                        z=z, face=f)
+    # The entire flock, processed in one NumPy pass each — no Python per-bird loop.
+    # Birds peck seeds from vegetated ground below: they GAIN energy only over
+    # flora and starve where the land is barren, so a flock can't persist over a
+    # dead planet. Breeding costs energy and is capped, so growth is a slow wave.
+    world.metabolize("bird", 0.04)                                    # steady upkeep
+    world.graze("bird", rate=0.01, gain=45.0, max_energy=150.0)       # forage seeds below
+    world.wander("bird", speed=0.9, turn=0.15)                        # gentle drift
+    world.breed("bird", energy_over=125.0, cost=62.0,
+                offspring_energy=55.0, cap=300)                       # modest, capped

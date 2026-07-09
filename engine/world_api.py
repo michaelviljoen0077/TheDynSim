@@ -340,6 +340,107 @@ class WorldAPI:
         self._world.commands.drain_energy(handle, drained)
         return drained
 
+    # -- batch primitives (HERD-AT-ONCE, vectorized) -------------------------------
+    # These process an entire OWNED species in one NumPy pass inside the engine, so
+    # a plugin expresses a whole herd's tick without a Python per-entity loop — the
+    # big performance lever (per-entity plugin loops dominate tick cost). They read
+    # tick-start state and their effects are command-buffered exactly like the
+    # single-entity calls, so ordering guarantees are unchanged. Energy effects
+    # COMPOSE additively, so metabolize + graze + breed on the same herd sum
+    # correctly. Prefer these for uniform behaviour; keep per-entity calls only for
+    # genuinely conditional logic that can't be expressed in bulk.
+
+    def _owned_rows(self, species: str) -> tuple:
+        sp = self._owned(species)
+        return sp, self._world.store.alive_indices(sp.id)
+
+    def metabolize(self, species: str, amount: float) -> None:
+        """Drain `amount` energy from every member of the species this tick."""
+        _sp, rows = self._owned_rows(species)
+        if rows.size:
+            self._world.commands.energy_delta_batch(
+                rows, np.full(rows.size, -float(amount), dtype=np.float32))
+
+    def graze(self, species: str, rate: float, gain: float, max_energy: float = 200.0) -> None:
+        """Every member grazes flora at its own cell: bite up to `rate`, convert to
+        `gain` energy per unit (capped so nobody exceeds `max_energy`). Flora is
+        drained (clamped, can't go negative) exactly like eat_flora."""
+        _sp, rows = self._owned_rows(species)
+        if not rows.size:
+            return
+        s = self._world.store
+        size = self._world.config.size
+        ix = np.clip(s.px[rows].astype(np.int64), 0, size - 1)
+        iy = np.clip(s.py[rows].astype(np.int64), 0, size - 1)
+        d = self._world.flora.density
+        if self._world.geom is not None:
+            face = s.face[rows].astype(np.int64)
+            avail = d[face, ix, iy]
+        else:
+            face = np.zeros(rows.size, dtype=np.int64)
+            avail = d[ix, iy]
+        bite = np.minimum(avail, float(rate)).astype(np.float32)
+        headroom = np.maximum(0.0, float(max_energy) - s.energy[rows])
+        egain = np.minimum(bite * float(gain), headroom).astype(np.float32)
+        self._world.commands.energy_delta_batch(rows, egain)
+        self._world.commands.flora_bite_batch(face, ix, iy, bite)
+
+    def wander(self, species: str, speed: float, turn: float = 0.25) -> None:
+        """Advance every member along a persistent per-entity 'heading' prop, with a
+        small random turn each tick. The species must declare a 'heading' prop; the
+        engine keeps that heading continuous across cube seams."""
+        sp, rows = self._owned_rows(species)
+        slot = sp.prop_slots.get("heading")
+        if slot is None:
+            raise CapabilityViolation(
+                "no-heading-prop", f"{species!r} must declare a 'heading' prop to wander()")
+        if not rows.size:
+            return
+        s = self._world.store
+        hd = s.props[rows, slot].astype(np.float64)
+        unset = hd == 0.0
+        if unset.any():
+            hd[unset] = self.rng.uniform(0.1, 6.28, size=int(unset.sum()))
+        hd = hd + self.rng.uniform(-float(turn), float(turn), size=rows.size)
+        # heading is this species' own internal state; write it back now (the engine
+        # re-projects it for any entity that folds across a seam during apply)
+        s.props[rows, slot] = hd.astype(np.float32)
+        dx = (np.cos(hd) * float(speed)).astype(np.float32)
+        dy = (np.sin(hd) * float(speed)).astype(np.float32)
+        self._world.commands.move_batch(rows, dx, dy)
+
+    def breed(self, species: str, energy_over: float, cost: float,
+              offspring_energy: float | None = None, cap: int | None = None) -> int:
+        """Every member whose energy exceeds `energy_over` spawns one offspring
+        (jittered to its position), paying `cost` energy. Returns how many bred.
+        `cap` limits the species' total; per-tick/quota caps still apply via spawn."""
+        sp, rows = self._owned_rows(species)
+        if not rows.size:
+            return 0
+        s = self._world.store
+        eligible = rows[s.energy[rows] > float(energy_over)]
+        if cap is not None:
+            room = int(cap) - int(rows.size)
+            if room <= 0:
+                return 0
+            if eligible.size > room:
+                eligible = eligible[:room]
+        if not eligible.size:
+            return 0
+        off_e = float(offspring_energy) if offspring_energy is not None else float(cost)
+        self._world.commands.energy_delta_batch(
+            eligible, np.full(eligible.size, -float(cost), dtype=np.float32))
+        px = s.px[eligible].tolist()
+        py = s.py[eligible].tolist()
+        pz = s.pz[eligible].tolist()
+        strat = s.stratum[eligible].tolist()
+        face = s.face[eligible].tolist()
+        for x, y, z, st, fc in zip(px, py, pz, strat, face, strict=True):
+            self.spawn(species, x + self.rng.uniform(-1.5, 1.5),
+                       y + self.rng.uniform(-1.5, 1.5),
+                       stratum=int(st), energy=off_e, z=float(z), face=int(fc))
+        return int(eligible.size)
+
     # -- environment ---------------------------------------------------------------
     # env reads take a `face` (0 for flat/wrap). On a cube, pass world.face(handle)
     # so a creature reads the terrain of the face it's actually standing on.

@@ -165,6 +165,34 @@ prey plugin that makes its own predator eat it (or that attacks the predator to
 "defend" itself) is backwards and will be scored down. To give an existing prey a
 new predator, MUTATE the predator (lineage) so it hunts that prey.
 
+### Batched herd primitives — PREFER these (huge perf win)
+When every member of a species does the same thing, drive the WHOLE herd in one
+vectorized engine call instead of a Python `for` loop over `world.entities(...)`.
+Per-entity loops dominate tick cost; batched calls are ~2-3x faster at scale and
+scale to big populations. Each reads tick-start state and buffers its effect like
+the single-entity calls; energy effects COMPOSE additively.
+- `world.metabolize(species, amount)` — drain `amount` energy from every member.
+- `world.graze(species, rate, gain, max_energy=200.0)` — each member eats flora at
+  its cell (bite up to `rate`), gaining `gain` energy per unit up to `max_energy`.
+- `world.wander(species, speed, turn=0.25)` — advance every member along its
+  persistent `heading` prop (declare a `"heading"` prop) with a small random turn;
+  heading stays continuous across cube seams.
+- `world.breed(species, energy_over, cost, offspring_energy=None, cap=None)` — every
+  member over `energy_over` energy spawns one offspring (inherits position/face/z),
+  paying `cost`; returns how many bred.
+
+A complete, efficient species can be just four lines (see `sky_flock`):
+```python
+def on_tick(world):
+    world.metabolize("bird", 0.04)
+    world.graze("bird", rate=0.01, gain=45.0, max_energy=150.0)
+    world.wander("bird", speed=0.9, turn=0.15)
+    world.breed("bird", energy_over=125.0, cost=62.0, offspring_energy=55.0, cap=300)
+```
+Use a per-entity loop only for genuinely conditional behaviour (fleeing a nearby
+predator, avoiding water) that can't be expressed over the whole herd at once —
+and even then, do the uniform parts (metabolize/graze) in batch.
+
 ### Give EXISTING creatures new abilities — don't just add species
 Prefer *mutating a live plugin* (`PLUGIN_META['lineage_parent']`) to grant its
 species a new behaviour over inventing yet another species. Abilities you can

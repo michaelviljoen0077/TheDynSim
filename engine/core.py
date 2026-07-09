@@ -29,6 +29,12 @@ class World:
         self.config = config
         self.tick = 0
         self.epoch = 0
+        # runtime operator switch (god mode): when False the per-species and
+        # per-plugin population ceilings AND crowding-stress overpopulation
+        # control are suspended, so populations grow until food/predation limit
+        # them. Not snapshotted — it's an operator setting, not sim state, so a
+        # shadow fork always evaluates under normal caps (fair fitness).
+        self.caps_enabled = True
         self.rng = np.random.default_rng(config.seed)
         self.registry = SpeciesRegistry(config.max_prop_slots)
         self.store = EntityStore(config.initial_capacity, config.max_prop_slots)
@@ -194,7 +200,7 @@ class World:
         capacity without the boom-bust of a hard cap or a lethal plague.
         """
         cfg = self.config
-        if cfg.crowding_penalty <= 0.0:
+        if cfg.crowding_penalty <= 0.0 or not self.caps_enabled:
             return
         store = self.store
         alive = np.flatnonzero(store.alive)

@@ -156,6 +156,13 @@ class EngineRunner:
             removed = int(rows.size)
         return {"culled": removed, "species": species}
 
+    def god_set_caps(self, enabled: bool) -> dict:
+        """Toggle the engine population ceilings + crowding stress. Off = let
+        populations grow until food/predation limits them (experiment mode)."""
+        with self.lock:
+            self.world.caps_enabled = bool(enabled)
+        return {"capsEnabled": self.world.caps_enabled}
+
     def god_flora(self, mode: str, amount: float = 0.5) -> dict:
         """Bloom (raise flora everywhere on land) or scorch (knock it down).
         Both are transient — the flora field's growth/regrowth dynamics pull it
@@ -225,4 +232,5 @@ class EngineRunner:
                 "tps": round(self.measured_tps, 1),
                 "entities": w.store.count,
                 "targetTps": self.target_tps,
+                "capsEnabled": w.caps_enabled,
             }

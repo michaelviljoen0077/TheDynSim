@@ -163,9 +163,15 @@ class WorldAPI:
         self._spawns_this_tick += 1
         # count this species' pending spawns this tick toward its hard cap
         self._species_counts[sp.id] = self._species_counts.get(sp.id, 0) + 1
-        if (self._spawns_this_tick > cfg.max_spawns_per_tick
-                or self._owned_alive + self._spawns_this_tick > cfg.max_entities_per_plugin
-                or self._species_counts[sp.id] > cfg.max_entities_per_species):
+        # the per-tick spawn RATE is always enforced (a cheap safety valve against
+        # a pathological plugin); the population CEILINGS (per-species, per-plugin)
+        # are suspended when the operator turns caps off to experiment.
+        over_rate = self._spawns_this_tick > cfg.max_spawns_per_tick
+        over_ceiling = (
+            self._owned_alive + self._spawns_this_tick > cfg.max_entities_per_plugin
+            or self._species_counts[sp.id] > cfg.max_entities_per_species
+        )
+        if over_rate or (self._world.caps_enabled and over_ceiling):
             self.spawn_drops += 1
             return
         self._world.commands.spawn(sp.id, float(x), float(y), float(z), int(stratum),

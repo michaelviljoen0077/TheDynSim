@@ -177,6 +177,12 @@ def create_app(seed: int = 424242, world_size: int = 384, topology: str = "cube"
             _log_intervention("god_flora", result)
         return result
 
+    @app.post("/api/god/caps")
+    def god_caps(body: AutoBody) -> dict:
+        result = runner.god_set_caps(body.enabled)
+        _log_intervention("god_caps", result)
+        return result
+
     # -- plugins & rollback (Story 2.4) ---------------------------------------
 
     @app.get("/api/plugins")

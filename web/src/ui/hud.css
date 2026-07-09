@@ -312,6 +312,14 @@
 .god-flora-row .k {
   min-width: 34px;
 }
+.god-caps-row {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 180, 84, 0.18);
+}
+.god-caps-row input {
+  accent-color: #ffb454;
+}
 
 .world-waiting {
   height: 100%;

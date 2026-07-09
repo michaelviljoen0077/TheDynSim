@@ -60,13 +60,29 @@ export function Hud() {
   const speedTimer = useRef<number | undefined>(undefined);
   const [godSpecies, setGodSpecies] = useState('');
   const [spawnCount, setSpawnCount] = useState(20);
+  const [capsEnabled, setCapsEnabled] = useState(true);
   const activeGodSpecies = godSpecies || species[0]?.name || '';
+
+  const toggleCaps = (enabled: boolean) => {
+    setCapsEnabled(enabled); // optimistic
+    void fetch('/api/god/caps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+      .then((r) => r.json())
+      .then((s: { capsEnabled?: boolean }) => {
+        if (typeof s.capsEnabled === 'boolean') setCapsEnabled(s.capsEnabled);
+      })
+      .catch(() => undefined);
+  };
 
   useEffect(() => {
     void fetch('/api/state')
       .then((r) => r.json())
-      .then((s: { targetTps: number }) => {
+      .then((s: { targetTps: number; capsEnabled?: boolean }) => {
         if (typeof s.targetTps === 'number') setTps(Math.round(s.targetTps));
+        if (typeof s.capsEnabled === 'boolean') setCapsEnabled(s.capsEnabled);
       })
       .catch(() => undefined);
   }, []);
@@ -286,6 +302,17 @@ export function Hud() {
             🔥 Scorch
           </button>
         </div>
+        <label
+          className="stratum-toggle god-caps-row"
+          title="Population caps: the per-species/per-plugin ceilings + crowding stress. Turn off to let populations grow until food and predation limit them."
+        >
+          <input
+            type="checkbox"
+            checked={capsEnabled}
+            onChange={(e) => toggleCaps(e.target.checked)}
+          />
+          population caps
+        </label>
       </div>
       </div>
     </div>

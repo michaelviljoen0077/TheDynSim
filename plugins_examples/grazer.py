@@ -26,7 +26,6 @@ def setup(world):
 
 
 def on_tick(world):
-    population = world.count("grazer")
     wolves_exist = world.count("wolf") > 0
     for grazer in world.entities("grazer"):
         energy = world.get(grazer, "energy") - 0.08
@@ -89,23 +88,22 @@ def on_tick(world):
         # gestation prop is a single countdown — a pregnant grazer can't start
         # another). A pregnancy can still yield a LITTER of 1-2 at term. Long
         # gestation + up-front energy cost keeps growth a slow wave, not a boom.
+        # There is NO hard population cap: conception is gated by energy, age,
+        # local flora and crowding, so the herd settles at the land's carrying
+        # capacity (a soft equilibrium), not at a number.
         gestation = world.get(grazer, "gestation")
         if gestation > 0.0:
             world.set(grazer, "gestation", gestation - 1.0)
             if gestation <= 1.0:
                 litter = 1 + int(world.rng.integers(0, 2))  # 1 or 2 young
                 for _ in range(litter):
-                    if population >= 1500:
-                        break
-                    population += 1
                     world.spawn("grazer", x + world.rng.uniform(-2, 2),
                                 y + world.rng.uniform(-2, 2),
                                 stratum=world.SURFACE, energy=45.0, face=f,
                                 parent=grazer)  # inherit speed gene (mutated)
-        elif energy > 165.0 and world.get(grazer, "age") > 200 and population < 1500:
+        elif energy > 165.0 and world.get(grazer, "age") > 200:
             # density-dependent conception: crowded or overgrazed ground means no
-            # pregnancy — the population saturates against its resources instead
-            # of sprinting to the hard cap
+            # pregnancy — the herd saturates against its resources
             if world.flora_at(x, y, f) > 0.06 and len(world.within(grazer, 5.0, species="grazer")) < 4:
                 world.set(grazer, "gestation", 160.0)   # ~1.3 days of pregnancy
                 world.set(grazer, "energy", energy - 55.0)

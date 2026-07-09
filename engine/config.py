@@ -29,18 +29,21 @@ class WorldConfig:
     terrain_octaves: int = 5
 
     # per-plugin quotas (enforced by WorldAPI; here so shadow == live)
-    max_entities_per_plugin: int = 4000
+    max_entities_per_plugin: int = 12000
     max_spawns_per_tick: int = 200
     max_store_keys: int = 64
-    # hard ceiling per species — the many-species end-goal needs each species
-    # bounded so total entity count (the real perf driver) stays sane
-    max_entities_per_species: int = 500
+    # SAFETY NET, not the population control. Real equilibrium comes from the SOFT
+    # mechanisms below (crowding stress + food + breeding cost), which hold healthy
+    # populations far under this. The ceiling only stops a pathological runaway
+    # from exhausting memory; the god-mode caps toggle can suspend it entirely.
+    max_entities_per_species: int = 5000
 
-    # density-dependent crowding stress: the non-predator overpopulation control.
+    # density-dependent crowding stress: THE primary (soft) overpopulation control.
     # An entity with more than `crowding_softcap` same-species neighbours within
     # `crowding_radius` loses `crowding_penalty` energy per excess neighbour each
     # tick — models competition/disease/stress. Proportional (not catastrophic),
-    # so it throttles growth smoothly instead of causing boom-bust collapse.
+    # so it throttles growth smoothly toward a carrying capacity instead of a hard
+    # wall or a boom-bust collapse. This is the equilibrium point, not the ceiling.
     crowding_radius: float = 6.0
     crowding_softcap: int = 6
     crowding_penalty: float = 0.20

@@ -435,15 +435,24 @@ class WorldAPI:
         self._world.commands.move_batch(rows, dx, dy)
 
     def breed(self, species: str, energy_over: float, cost: float,
-              offspring_energy: float | None = None, cap: int | None = None) -> int:
+              offspring_energy: float | None = None, cap: int | None = None,
+              crowd_max: int | None = None, crowd_radius: float = 8.0) -> int:
         """Every member whose energy exceeds `energy_over` spawns one offspring
         (jittered to its position), paying `cost` energy. Returns how many bred.
-        `cap` limits the species' total; per-tick/quota caps still apply via spawn."""
+
+        For a SOFT equilibrium (preferred over a hard `cap`), pass `crowd_max`: an
+        entity only breeds where it has at most `crowd_max` same-species neighbours
+        within `crowd_radius`, so the birth rate falls as density rises and the
+        population settles at the land's carrying capacity — density-dependent
+        reproduction, the textbook logistic control. `cap` is a hard backstop."""
         sp, rows = self._owned_rows(species)
         if not rows.size:
             return 0
         s = self._world.store
-        eligible = rows[s.energy[rows] > float(energy_over)]
+        mask = s.energy[rows] > float(energy_over)
+        if crowd_max is not None:
+            mask &= self._local_density(rows, float(crowd_radius)) <= int(crowd_max)
+        eligible = rows[mask]
         if cap is not None:
             room = int(cap) - int(rows.size)
             if room <= 0:
@@ -485,6 +494,21 @@ class WorldAPI:
                 lo, hi = sorted((0.25 * default, 4.0 * default))
                 child[:, slot] = np.clip(child[:, slot] + noise, lo, hi)
         return child
+
+    def _local_density(self, rows: np.ndarray, radius: float) -> np.ndarray:
+        """Same-species neighbours (excluding self) sharing each entity's cell — a
+        cheap O(n) density proxy (same trick the engine's crowding stress uses)."""
+        s = self._world.store
+        cell = max(float(radius), 1.0)
+        size = self._world.config.size
+        ncell = int(size / cell) + 2
+        gx = (s.px[rows] / cell).astype(np.int64)
+        gy = (s.py[rows] / cell).astype(np.int64)
+        key = gx * ncell + gy
+        if self._world.geom is not None:   # don't let separate faces cross-count
+            key = key * 6 + s.face[rows].astype(np.int64)
+        _u, inv, counts = np.unique(key, return_inverse=True, return_counts=True)
+        return counts[inv] - 1
 
     def _mutate_one(self, sp, base: np.ndarray) -> np.ndarray:
         """Single-offspring inheritance: parent genome + per-gene gaussian mutation."""

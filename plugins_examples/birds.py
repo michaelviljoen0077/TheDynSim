@@ -30,5 +30,10 @@ def on_tick(world):
     world.metabolize("bird", 0.04)                                    # steady upkeep
     world.graze("bird", rate=0.01, gain=45.0, max_energy=150.0)       # forage seeds below
     world.wander("bird", speed=0.9, turn=0.15)                        # gentle drift
-    world.breed("bird", energy_over=125.0, cost=62.0,
-                offspring_energy=55.0, cap=300)                       # modest, capped
+    # Density-dependent breeding (crowd_max) shapes the flock softly; the cap is an
+    # ecological BACKSTOP, not the control. Birds share the grazers' flora, so a
+    # fully capless flock would out-forage the herd — true soft-caps for birds
+    # needs their own food source (resource partitioning), a follow-up. The grazer
+    # is the pure soft-equilibrium example (no cap at all).
+    world.breed("bird", energy_over=125.0, cost=62.0, offspring_energy=55.0,
+                crowd_max=6, crowd_radius=8.0, cap=300)

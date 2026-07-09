@@ -35,11 +35,12 @@ class World:
         self.config = config
         self.tick = 0
         self.epoch = 0
-        # runtime operator switch (god mode): when False the per-species and
-        # per-plugin population ceilings AND crowding-stress overpopulation
-        # control are suspended, so populations grow until food/predation limit
-        # them. Not snapshotted — it's an operator setting, not sim state, so a
-        # shadow fork always evaluates under normal caps (fair fitness).
+        # runtime operator switch (god mode): when False the HARD population
+        # ceilings (per-species, per-plugin) are suspended. The SOFT equilibrium
+        # controls — crowding stress, food limitation, breeding cost — stay on
+        # regardless, since they are the natural carrying-capacity mechanism (the
+        # goal is soft-caps-only). Not snapshotted — an operator setting, not sim
+        # state, so a shadow fork always evaluates under normal ceilings.
         self.caps_enabled = True
         self.rng = np.random.default_rng(config.seed)
         self.registry = SpeciesRegistry(config.max_prop_slots, config.max_gene_slots)
@@ -229,7 +230,7 @@ class World:
         capacity without the boom-bust of a hard cap or a lethal plague.
         """
         cfg = self.config
-        if cfg.crowding_penalty <= 0.0 or not self.caps_enabled:
+        if cfg.crowding_penalty <= 0.0:
             return
         store = self.store
         alive = np.flatnonzero(store.alive)

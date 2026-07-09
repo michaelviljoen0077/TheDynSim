@@ -304,7 +304,7 @@ export function Hud() {
         </div>
         <label
           className="stratum-toggle god-caps-row"
-          title="Population caps: the per-species/per-plugin ceilings + crowding stress. Turn off to let populations grow until food and predation limit them."
+          title="Hard population ceilings (per-species/per-plugin). Turn off to let populations grow until the SOFT controls — crowding stress, food, breeding cost — limit them. Those soft controls stay on either way."
         >
           <input
             type="checkbox"

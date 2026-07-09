@@ -51,6 +51,20 @@ def test_wander_moves_the_herd_and_sets_headings():
     assert np.any(w.store.px[rows] != px0)           # the herd moved
 
 
+def test_breed_crowd_max_suppresses_dense_flocks():
+    """Density-dependent breeding: with crowd_max set, packed entities don't breed
+    (the soft carrying-capacity control that replaces hard population caps)."""
+    w, api, sid = _world()                 # 20 sparrows stacked on one cell
+    rows = w.store.alive_indices(sid)
+    w.store.energy[rows] = 150.0
+    api.on_tick_begin()
+    n = api.breed("sparrow", energy_over=100.0, cost=10.0, crowd_max=5, crowd_radius=8.0)
+    assert n == 0                          # all 20 share a cell -> too crowded to breed
+    api.on_tick_begin()
+    n2 = api.breed("sparrow", energy_over=100.0, cost=10.0)  # no crowd limit
+    assert n2 == 20
+
+
 def test_breed_grows_population_and_costs_the_parents():
     w, api, sid = _world()
     rows = w.store.alive_indices(sid)

@@ -7,7 +7,9 @@ import numpy as np
 from engine import World, WorldConfig
 from engine.plugin_host import PluginHost
 
-FISH = (Path(__file__).resolve().parents[2] / "plugins_examples" / "fish.py").read_text()
+EX = Path(__file__).resolve().parents[2] / "plugins_examples"
+FISH = (EX / "fish.py").read_text()
+SHARK = (EX / "shark.py").read_text()
 
 
 def test_fish_installs_survives_and_stays_in_water():
@@ -23,3 +25,16 @@ def test_fish_installs_survives_and_stays_in_water():
     ix = np.clip(w.store.px[rows].astype(int), 0, 63)
     iy = np.clip(w.store.py[rows].astype(int), 0, 63)
     assert float((wm[ix, iy] > 0.5).mean()) > 0.6      # the shoal keeps to the water
+
+
+def test_fish_and_shark_form_an_aquatic_food_chain():
+    w = World(WorldConfig(seed=7, size=64, topology="wrap", initial_capacity=8192))
+    host = PluginHost(w)
+    host.install(FISH)
+    host.install(SHARK)
+    fid = w.registry.by_name["fish"].id
+    sid = w.registry.by_name["shark"].id
+    for _ in range(400):
+        w.step()
+    assert w.store.alive_indices(fid).size > 0          # prey persists
+    assert w.store.alive_indices(sid).size > 0          # predator feeds itself on fish

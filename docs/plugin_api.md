@@ -293,7 +293,8 @@ reproduce, evolving speed gene), `plugins_examples/predator.py` (hunt via `attac
 night-rest, starve, reproduce), `plugins_examples/birds.py` (batched-primitive sky
 flock — metabolize/graze/wander/breed, no per-entity loop),
 `plugins_examples/fish.py` (aquatic grazer: swims in water, filter-feeds plankton,
-stays wet). These are the canonical idioms — imitate their structure.
+stays wet), `plugins_examples/shark.py` (aquatic predator: hunts fish, pack size
+rides on prey abundance). These are the canonical idioms — imitate their structure.
 
 ## What gets your candidate rejected
 

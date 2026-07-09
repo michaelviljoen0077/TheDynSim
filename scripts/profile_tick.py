@@ -22,7 +22,7 @@ from engine import World, WorldConfig
 from engine.plugin_host import PluginHost
 
 PLUGINS = Path(__file__).resolve().parent.parent / "plugins_examples"
-BASE = ("grazer.py", "predator.py", "birds.py")
+BASE = ("grazer.py", "predator.py", "birds.py", "fish.py", "shark.py", "raptor.py")
 
 
 def build(size: int, settle: int) -> World:

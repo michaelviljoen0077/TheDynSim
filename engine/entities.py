@@ -115,6 +115,15 @@ class SpeciesRegistry:
         """Per-species lifespan in ticks (0 = immortal), indexed by species id."""
         return np.array([s.lifespan for s in self.by_id] or [0], dtype=np.int64)
 
+    def heading_slots_array(self) -> np.ndarray:
+        """Per-species prop slot of a prop literally named "heading" (else -1),
+        indexed by species id. The engine uses this to keep a roaming creature's
+        heading continuous when it folds across a cube seam (so it doesn't
+        ping-pong along face edges)."""
+        return np.array(
+            [s.prop_slots.get("heading", -1) for s in self.by_id] or [-1], dtype=np.int64
+        )
+
     def to_state(self) -> list[dict]:
         return [
             {

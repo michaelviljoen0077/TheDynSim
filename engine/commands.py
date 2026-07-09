@@ -72,7 +72,8 @@ class CommandBuffer:
               water: np.ndarray | None = None,
               swim_speeds: np.ndarray | None = None,
               wrap: bool = False,
-              geom=None) -> None:
+              geom=None,
+              heading_slots: np.ndarray | None = None) -> None:
         """Apply ops in submission order (deterministic).
 
         Topology: `geom` (a CubeGeometry) folds edge-crossers onto neighbour
@@ -186,11 +187,27 @@ class CommandBuffer:
                                      | (vals[:, 1] < 0) | (vals[:, 1] >= world_max))
                 for k in oob.tolist():
                     i = int(rows[k])
-                    nf, nx, ny = geom.step(int(store.face[i]), float(xs[i]), float(ys[i]),
-                                           float(fdx[k]), float(fdy[k]))
+                    old_face = int(store.face[i])
+                    ox, oy = float(xs[i]), float(ys[i])
+                    dxk, dyk = float(fdx[k]), float(fdy[k])
+                    nf, nx, ny = geom.step(old_face, ox, oy, dxk, dyk)
                     store.face[i] = nf
                     vals[k, 0] = nx
                     vals[k, 1] = ny
+                    # keep a roaming creature's heading continuous across the seam.
+                    # A cube edge turns the surface 90 deg, so the world direction
+                    # isn't preserved as a tangent — instead fold a point slightly
+                    # FURTHER along the same trajectory and read the heading from the
+                    # folded step ON THE NEW FACE. Without this a crosser gets a
+                    # scrambled local angle and ping-pongs along the edge.
+                    if heading_slots is not None:
+                        slot = int(heading_slots[int(store.species_id[i])])
+                        if slot >= 0:
+                            nf2, nx2, ny2 = geom.step(old_face, ox, oy, dxk * 1.05, dyk * 1.05)
+                            hdx, hdy = nx2 - nx, ny2 - ny
+                            if nf2 == nf and (hdx * hdx + hdy * hdy) > 1e-12:
+                                store.props[i, slot] = np.float32(
+                                    float(np.arctan2(hdy, hdx)) or 1e-4)
                 np.clip(vals[:, 0], 0.0, top, out=vals[:, 0])
                 np.clip(vals[:, 1], 0.0, top, out=vals[:, 1])
             elif wrap:

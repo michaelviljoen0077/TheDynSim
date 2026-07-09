@@ -138,7 +138,8 @@ class World:
                             flora=self.flora.density, speeds=self.registry.speeds_array(),
                             water=self.terrain.water_mask,
                             swim_speeds=self.registry.swim_speeds_array(),
-                            wrap=self.config.wrap, geom=self.geom)
+                            wrap=self.config.wrap, geom=self.geom,
+                            heading_slots=self.registry.heading_slots_array())
         self._water_effects()
         self._crowding_stress()
         self._death_sweep()

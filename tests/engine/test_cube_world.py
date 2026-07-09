@@ -2,6 +2,8 @@
 face edges, neighbour queries are GLOBAL 3D (seamless across faces), and it all
 survives snapshots."""
 
+import math
+
 import numpy as np
 
 from engine import World, WorldConfig, load_snapshot, save_snapshot, state_hash
@@ -11,6 +13,37 @@ from engine.world_api import WorldAPI
 
 def cube_world(seed=1, size=48):
     return World(WorldConfig(seed=seed, size=size, topology="cube", initial_capacity=2048))
+
+
+def test_heading_prop_is_reprojected_across_a_seam():
+    """A roaming creature's 'heading' prop stays continuous when it folds onto a
+    neighbour face — it keeps its WORLD direction instead of a scrambled local
+    angle that would make it ping-pong along the edge."""
+    w = cube_world(size=32)
+    sp = w.registry.register("rover", speed=8.0, props=("heading",))
+    slot = sp.prop_slots["heading"]
+    size = w.config.size
+    h = w.store.spawn(sp.id, float(size - 1), float(size // 2), 0.0, SURFACE, 100.0, -1, 0)
+    i = handle_index(h)
+    w.store.props[i, slot] = 0.0
+    apply_kwargs = dict(geom=w.geom, speeds=w.registry.speeds_array(),
+                        heading_slots=w.registry.heading_slots_array())
+
+    # step 1: push off the +x edge of face 0 so the entity folds to a neighbour
+    w.spatial3d.rebuild(w.store)
+    w.commands.move(h, 3.0, 0.0)
+    w.commands.apply(w.store, float(size), **apply_kwargs)
+    nf = int(w.store.face[i])
+    assert nf != 0, "entity should have folded onto a neighbour face"
+
+    # step 2: follow the re-projected heading. It must continue INTO the new face,
+    # not immediately fold back across the same seam (the ping-pong that made
+    # roamers hug edges). A stale local angle would send it straight back.
+    hd = float(w.store.props[i, slot])
+    w.spatial3d.rebuild(w.store)
+    w.commands.move(h, math.cos(hd) * 2.0, math.sin(hd) * 2.0)
+    w.commands.apply(w.store, float(size), **apply_kwargs)
+    assert int(w.store.face[i]) != 0, "re-projected heading must not ping-pong back across the seam"
 
 
 def test_world_builds_cube_geometry():

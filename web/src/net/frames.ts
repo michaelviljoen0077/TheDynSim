@@ -39,6 +39,9 @@ interface LiveData {
   /** All six faces' flora density (cube path). floras[0] === flora. */
   floras: (Uint8Array | null)[];
   floraVersion: number;
+  /** All six faces' plankton density (aquatic food, on water). */
+  planktons: (Uint8Array | null)[];
+  planktonVersion: number;
   prev: EntityFrame | null;
   curr: EntityFrame | null;
   /** Estimated ms between entity frames (interpolation window). */
@@ -53,6 +56,8 @@ export const live: LiveData = {
   flora: null,
   floras: new Array<Uint8Array | null>(N_FACES).fill(null),
   floraVersion: 0,
+  planktons: new Array<Uint8Array | null>(N_FACES).fill(null),
+  planktonVersion: 0,
   prev: null,
   curr: null,
   frameInterval: 100,

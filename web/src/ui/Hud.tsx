@@ -7,10 +7,11 @@ const STRATA: { index: 0 | 1 | 2; label: string }[] = [
   { index: 1, label: 'Surface' },
   { index: 2, label: 'Sky' },
 ];
-const OVERLAYS: { value: 'none' | 'flora' | 'water'; label: string }[] = [
+const OVERLAYS: { value: 'none' | 'flora' | 'water' | 'plankton'; label: string }[] = [
   { value: 'none', label: 'Terrain' },
   { value: 'flora', label: 'Flora' },
   { value: 'water', label: 'Water' },
+  { value: 'plankton', label: 'Plankton' },
 ];
 
 function control(cmd: 'start' | 'pause' | 'step' | 'reset'): void {

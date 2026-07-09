@@ -42,8 +42,13 @@ export function cellColor(
   flora: number | null,
   seaLevel: number,
   overlay: Overlay,
+  plankton: number | null = null,
 ): void {
-  if (overlay === 'flora') {
+  if (overlay === 'plankton') {
+    // Heat-map of aquatic food on open water; land dimmed for contrast.
+    if (water) heat(out, plankton ?? 0);
+    else out.setRGB(0.07, 0.09, 0.11);
+  } else if (overlay === 'flora') {
     // Heat-map of flora density; open water stays dark blue for contrast.
     if (water) out.copy(C_DEEP);
     else heat(out, flora ?? 0);

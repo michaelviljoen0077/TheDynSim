@@ -17,6 +17,7 @@ KIND_FIELD = 3
 FIELD_FLORA = 0
 FIELD_TEMPERATURE = 1
 FIELD_MOISTURE = 2
+FIELD_PLANKTON = 3
 
 
 def _header(kind: int, tick: int, epoch: int, n: int) -> bytes:
@@ -70,6 +71,8 @@ def encode_field(world: World, field_id: int, face: int = 0) -> bytes:
         values = (world.weather.temperature + 20.0) / 60.0
     elif field_id == FIELD_MOISTURE:
         values = world.weather.soil_moisture
+    elif field_id == FIELD_PLANKTON:
+        values = world.plankton.density
     else:
         raise ValueError(f"unknown field id {field_id}")
     plane = _face_slice(values, world, face)

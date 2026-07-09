@@ -47,7 +47,7 @@ export interface FrameInfo {
 
 export type ConnStatus = 'connecting' | 'connected' | 'reconnecting';
 
-export type Overlay = 'none' | 'flora' | 'water';
+export type Overlay = 'none' | 'flora' | 'water' | 'plankton';
 
 interface GenesisStore {
   status: ConnStatus;

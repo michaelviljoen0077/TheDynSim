@@ -62,12 +62,14 @@ function paintFace(
 ): void {
   const S = t.size;
   const flora = live.floras[face];
+  const plankton = live.planktons[face];
   const colors = geom.attributes.color as THREE.BufferAttribute;
   for (let gy = 0; gy < S; gy++) {
     for (let gx = 0; gx < S; gx++) {
       const v = gy * S + gx;
       const d = gx * S + gy;
-      cellColor(_col, t.height[d], t.water[d] !== 0, flora ? flora[d] / 255 : null, seaLevel, overlay);
+      cellColor(_col, t.height[d], t.water[d] !== 0, flora ? flora[d] / 255 : null,
+        seaLevel, overlay, plankton ? plankton[d] / 255 : null);
       colors.setXYZ(v, _col.r, _col.g, _col.b);
     }
   }
@@ -83,6 +85,7 @@ export function CubeTerrain() {
   const overlay = useStore((s) => s.overlay);
 
   const floraSeen = useRef(-1);
+  const planktonSeen = useRef(-1);
   const overlaySeen = useRef<Overlay>('none');
   const builtSpherify = useRef(0);
 
@@ -132,9 +135,12 @@ export function CubeTerrain() {
       }
       builtSpherify.current = live.spherify;
     }
-    // Retint on new flora frame or overlay change (matches flat renderer).
-    if (live.floraVersion !== floraSeen.current || overlay !== overlaySeen.current) {
+    // Retint on a new flora/plankton frame or an overlay change.
+    if (live.floraVersion !== floraSeen.current
+        || live.planktonVersion !== planktonSeen.current
+        || overlay !== overlaySeen.current) {
       floraSeen.current = live.floraVersion;
+      planktonSeen.current = live.planktonVersion;
       overlaySeen.current = overlay;
       for (const { face, geom } of faces) {
         const t = live.terrains[face];

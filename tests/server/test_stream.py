@@ -93,10 +93,21 @@ def test_field_frame_arrives(client):
             if kind == 3:
                 _, tick, epoch, size = struct.unpack_from("<4I", data, 0)
                 field_id, face = struct.unpack_from("<2I", data, 16)
-                assert field_id in (0, 1, 2) and face == 0
+                assert field_id in (0, 1, 2, 3) and face == 0  # flora/temp/moisture/plankton
                 assert len(data) == 24 + size * size  # header + field_id + face + plane
                 return
         pytest.fail("no field frame within 5s")
+
+
+def test_encode_field_plankton():
+    from engine import World, WorldConfig
+    from server import protocol
+    w = World(WorldConfig(seed=1, size=32, topology="wrap"))
+    frame = protocol.encode_field(w, protocol.FIELD_PLANKTON, 0)
+    _kind, _tick, _epoch, size = struct.unpack_from("<4I", frame, 0)
+    fid, face = struct.unpack_from("<2I", frame, 16)
+    assert fid == protocol.FIELD_PLANKTON and face == 0
+    assert len(frame) == 24 + size * size
 
 
 def test_streaming_gil_gate(client):

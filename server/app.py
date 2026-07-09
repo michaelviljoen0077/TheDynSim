@@ -30,7 +30,8 @@ STREAM_HZ = 10.0
 FIELD_EVERY = 5          # every 5th frame carries one field, round-robin
 SEND_TIMEOUT_S = 0.5     # a client slower than this gets dropped
 
-FIELDS = (protocol.FIELD_FLORA, protocol.FIELD_TEMPERATURE, protocol.FIELD_MOISTURE)
+FIELDS = (protocol.FIELD_FLORA, protocol.FIELD_TEMPERATURE, protocol.FIELD_MOISTURE,
+          protocol.FIELD_PLANKTON)
 
 
 class SpeedBody(BaseModel):

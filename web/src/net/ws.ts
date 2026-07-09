@@ -134,15 +134,20 @@ function decodeEntities(buf: ArrayBuffer, tick: number, epoch: number, n: number
 }
 
 // kind 3: uint32 fieldId, uint32 face, then uint8 values[S*S].
-// We keep flora (fieldId 0) for every face; the cube renderer tints all six,
-// the flat path reads live.flora (face 0). Other fields are unused for now.
+// We keep flora (fieldId 0) and plankton (fieldId 3) per face for the overlays;
+// temperature/moisture (1/2) are unused for now.
 function decodeField(buf: ArrayBuffer, dv: DataView, size: number): void {
   const fieldId = dv.getUint32(HEADER_BYTES, true);
   const face = dv.getUint32(HEADER_BYTES + 4, true);
-  if (fieldId !== 0 || face < 0 || face >= live.floras.length) return;
+  if (face < 0 || face >= live.floras.length) return;
   const off = HEADER_BYTES + 8;
-  const values = new Uint8Array(buf.slice(off, off + size * size));
-  live.floras[face] = values;
-  if (face === 0) live.flora = values;
-  live.floraVersion++;
+  if (fieldId === 0) {
+    const values = new Uint8Array(buf.slice(off, off + size * size));
+    live.floras[face] = values;
+    if (face === 0) live.flora = values;
+    live.floraVersion++;
+  } else if (fieldId === 3) {
+    live.planktons[face] = new Uint8Array(buf.slice(off, off + size * size));
+    live.planktonVersion++;
+  }
 }

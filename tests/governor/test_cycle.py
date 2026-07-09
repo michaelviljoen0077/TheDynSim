@@ -34,7 +34,7 @@ def on_tick(world):
     for b in world.entities("beetle"):
         e = world.get(b, "energy") - 0.02
         x, y, _z = world.pos(b)
-        e += world.eat_flora(x, y, 0.004) * 30.0
+        world.eat_flora(b, x, y, 0.004, gain=30.0)
         world.set(b, "energy", min(e, 120.0))
         world.move(b, world.rng.uniform(-0.5, 0.5), world.rng.uniform(-0.5, 0.5))
         if e > 100.0 and world.count("beetle") < 220:
@@ -57,7 +57,7 @@ def setup(world):
 def on_tick(world):
     for lo in world.entities("locust"):
         x, y, _z = world.pos(lo)
-        world.eat_flora(x, y, 1.0)
+        world.eat_flora(lo, x, y, 1.0, gain=0.0)
         world.set(lo, "energy", 200.0)
         world.move(lo, world.rng.uniform(-2, 2), world.rng.uniform(-2, 2))
         if world.count("locust") < 900:
@@ -78,7 +78,7 @@ def on_tick(world):
     for m in world.entities("moss"):
         e = world.get(m, "energy") - 0.01
         x, y, _z = world.pos(m)
-        e += world.eat_flora(x, y, 0.003) * 25.0
+        world.eat_flora(m, x, y, 0.003, gain=25.0)
         world.set(m, "energy", min(e, 110.0))
         if e > 90.0 and world.count("moss") < 150:
             world.set(m, "energy", e * 0.5)

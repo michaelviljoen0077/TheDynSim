@@ -47,8 +47,10 @@ def on_tick(world):
                        best_dy / 2.0 + world.rng.uniform(-0.2, 0.2))
             continue
 
-        eaten = world.eat_flora(x, y, 0.03, f)
-        energy += eaten * 22.0
+        # graze: the engine credits this grazer at tick end from the cell's ACTUAL
+        # flora (shared with any herdmates on the same cell) — energy-conserving,
+        # so a crowded pasture feeds fewer, not everyone in full.
+        world.eat_flora(grazer, x, y, 0.03, gain=22.0, face=f)
         world.set(grazer, "energy", min(energy, 200.0))
         # energy <= 0 is handled by the engine death sweep
 

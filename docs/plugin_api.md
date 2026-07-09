@@ -172,9 +172,13 @@ species count — is what limits performance. So:
   ambush prey. Make it cost something (a hidden creature usually can't forage).
 
 ### Interaction (any species)
-- `world.attack(handle, amount) -> float` — engine-mediated predation: drains up
-  to `amount` energy from the target (applies at tick end, after the target's own
-  writes). Returns the expected gain — credit it to your own entity via `set`.
+- `world.attack(attacker, prey, amount, efficiency=0.8) -> float` — engine-mediated,
+  ENERGY-CONSERVING predation. `attacker` (one of YOUR entities) drains up to
+  `amount` from `prey` (any entity) and keeps `efficiency` of what it gets. The
+  engine credits your attacker AT TICK END from the prey's ACTUAL energy — shared
+  out if several predators hit the same prey — so **do NOT add the return value to
+  your own energy** (that would double-count). The return is only an estimate. Prey
+  reaching energy ≤ 0 dies with cause `predation`.
 
 **Where predation code belongs.** You may only *mutate* species you own, but
 `attack` works on any target — do not abuse that. The hunter drives predation:
@@ -221,7 +225,13 @@ is adjacent), **nocturnality** (act on `daylight`), **fleeing/herding**
 smarter existing species, not more of them.
 
 ### Environment
-- `world.flora_at(x, y) -> 0..1` · `world.eat_flora(x, y, amount) -> eaten` (immediate)
+- `world.flora_at(x, y) -> 0..1` — flora density at a cell (read).
+- `world.eat_flora(eater, x, y, amount, gain, face=0) -> float` — ENERGY-CONSERVING
+  grazing: `eater` (one of YOUR entities) claims up to `amount` flora worth `gain`
+  energy/unit. The engine credits the eater AT TICK END from the cell's ACTUAL
+  density — shared out if several grazers hit the same cell — so **do NOT add the
+  return to your own energy** (it's only an estimate). Or use the batched
+  `world.graze(species, rate, gain, max_energy)` for a whole herd at once.
 - `world.water_at(x, y) -> bool` · `world.height_at(x, y) -> 0..1` · `world.temperature_at(x, y)`
 - `world.weather() -> {"temperature", "precipitation"}` (world means)
 - `world.season() -> 0..1` (0 spring equinox) · `world.day_frac() -> 0..1` (0 midnight, 0.5 noon)
@@ -240,8 +250,9 @@ smarter existing species, not more of them.
 ## Diet is emergent, not a declared type
 
 There is no "herbivore/carnivore" flag — an animal's diet is simply which intake
-calls its `on_tick` makes. Grazing = `world.eat_flora(x, y, amount)`. Predation =
-`world.nearest(me, species=..., radius=r)` then `world.attack(prey, amount)`. An
+calls its `on_tick` makes. Grazing = `world.eat_flora(me, x, y, amount, gain)`.
+Predation = `world.nearest(me, species=..., radius=r)` then `world.attack(me, prey, amount)`
+(the engine credits `me` at tick end — don't self-credit the return). An
 **omnivore** does both: hunt when prey is near, graze otherwise. A **scavenger**
 could gain energy near recently-dead entities. Mix freely — generalists stabilize
 an ecosystem that specialists make fragile.

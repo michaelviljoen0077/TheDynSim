@@ -71,7 +71,7 @@ def on_tick(world):
 
         if prey is not None:
             if world.distance(wolf, prey) < 1.6:
-                energy += world.attack(prey, 60.0) * 0.8
+                world.attack(wolf, prey, 60.0)  # engine credits the wolf at tick end (eff 0.8)
             else:
                 dx, dy = world.direction_to(wolf, prey)
                 world.move(wolf, dx, dy)

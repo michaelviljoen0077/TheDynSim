@@ -37,6 +37,13 @@ class CommandBuffer:
     batch_energy: list[tuple] = field(default_factory=list)   # (rows, energy_deltas)
     batch_moves: list[tuple] = field(default_factory=list)     # (rows, dx, dy)
     batch_flora: list[tuple] = field(default_factory=list)     # (face, ix, iy, amount) arrays
+    # CONSUMPTION CLAIMS (energy conservation): eating/predation register a CLAIM
+    # on a shared resource rather than crediting the consumer synchronously. At
+    # tick end the engine sums each resource's claims and distributes only what is
+    # actually there (proportionally if over-subscribed), so N consumers of one
+    # cell/prey can never mint energy from tick-start estimates.
+    eat_claims: list[tuple] = field(default_factory=list)      # (rows, face, ix, iy, bite, gain) arrays
+    attack_claims: list[tuple] = field(default_factory=list)   # (attacker_row, prey_row, amount, eff)
 
     def spawn(self, species_id: int, x: float, y: float, z: float,
               stratum: int, energy: float, plugin_id: int = -1, face: int = 0,
@@ -87,6 +94,31 @@ class CommandBuffer:
     def flora_bite_batch(self, face: np.ndarray, ix: np.ndarray, iy: np.ndarray,
                          amount: np.ndarray) -> None:
         self.batch_flora.append((face, ix, iy, amount))
+
+    # -- consumption claims (energy-conserving) -------------------------------
+
+    def claim_flora(self, row: int, face: int, ix: int, iy: int,
+                    bite: float, gain: float) -> None:
+        """One entity claims up to `bite` flora at a cell, worth `gain` energy per
+        unit. Resolved (distributed + credited) at tick end."""
+        self.eat_claims.append((np.array([row], dtype=np.int64), np.array([face], dtype=np.int64),
+                                np.array([ix], dtype=np.int64), np.array([iy], dtype=np.int64),
+                                np.array([bite], dtype=np.float64), np.array([gain], dtype=np.float64)))
+
+    def claim_flora_batch(self, rows: np.ndarray, face: np.ndarray, ix: np.ndarray,
+                          iy: np.ndarray, bite: np.ndarray, gain: float) -> None:
+        """A whole herd's flora claims at once (world.graze)."""
+        self.eat_claims.append((rows.astype(np.int64), face.astype(np.int64),
+                                ix.astype(np.int64), iy.astype(np.int64),
+                                bite.astype(np.float64),
+                                np.full(rows.size, float(gain), dtype=np.float64)))
+
+    def claim_prey(self, attacker_row: int, prey_row: int, amount: float,
+                   efficiency: float) -> None:
+        """Predation claim: `attacker` drains up to `amount` from `prey`, keeping
+        `efficiency` of what it actually gets. Resolved at tick end."""
+        self.attack_claims.append((int(attacker_row), int(prey_row),
+                                   float(amount), float(efficiency)))
 
     def apply(self, store: EntityStore, world_max: float,
               predation_marks: set[int] | None = None,
@@ -273,8 +305,10 @@ class CommandBuffer:
             xs[rows] = vals[:, 0]
             ys[rows] = vals[:, 1]
             zs[rows] = vals[:, 2]
+        # legacy per-bite flora drain (kept for any direct commands.eat_flora use;
+        # empty when consumption goes through the conserving claim system below)
         if flora is not None and self.flora_bites:
-            if geom is not None:  # (face, ix, iy) drain
+            if geom is not None:
                 for fc, ix, iy, amount in self.flora_bites:
                     avail = float(flora[fc, ix, iy])
                     flora[fc, ix, iy] = avail - min(avail, amount)
@@ -282,8 +316,78 @@ class CommandBuffer:
                 for _fc, ix, iy, amount in self.flora_bites:
                     avail = float(flora[ix, iy])
                     flora[ix, iy] = avail - min(avail, amount)
+
+        # -- resolve consumption claims (energy conservation) -------------------
+        # Predation first (credits attackers from prey energy), then grazing
+        # (credits eaters from flora). Both distribute only the ACTUAL available
+        # resource among contenders, so energy can't be minted from tick-start
+        # estimates. Applied after the per-op loop, so a consumer's own set_energy
+        # this tick has already landed and the credit stacks on top.
+        self._resolve_predation(store, predation_marks)
+        self._resolve_grazing(store, flora, geom)
+
         self.flora_bites.clear()
         self.ops.clear()
         self.batch_energy.clear()
         self.batch_moves.clear()
         self.batch_flora.clear()
+        self.eat_claims.clear()
+        self.attack_claims.clear()
+
+    def _resolve_predation(self, store: EntityStore, predation_marks: set[int] | None) -> None:
+        if not self.attack_claims:
+            return
+        a_rows = np.fromiter((c[0] for c in self.attack_claims), dtype=np.int64,
+                             count=len(self.attack_claims))
+        p_rows = np.fromiter((c[1] for c in self.attack_claims), dtype=np.int64,
+                             count=len(self.attack_claims))
+        amounts = np.fromiter((c[2] for c in self.attack_claims), dtype=np.float64,
+                              count=len(self.attack_claims))
+        effs = np.fromiter((c[3] for c in self.attack_claims), dtype=np.float64,
+                           count=len(self.attack_claims))
+        prey, inv = np.unique(p_rows, return_inverse=True)
+        inv = inv.reshape(-1)   # numpy 2.0 briefly returned a 2-D inverse
+        demand = np.zeros(prey.size)
+        np.add.at(demand, inv, amounts)
+        avail = store.energy[prey].astype(np.float64)
+        scale = np.ones(prey.size)
+        nz = demand > 0.0
+        scale[nz] = np.minimum(1.0, avail[nz] / demand[nz])      # over-subscribed prey shared out
+        actual = amounts * scale[inv]                             # each attacker's real drain
+        np.add.at(store.energy, a_rows, (actual * effs).astype(np.float32))   # credit attackers
+        drained = np.zeros(prey.size)
+        np.add.at(drained, inv, actual)
+        store.energy[prey] -= drained.astype(np.float32)          # drain prey once, by total taken
+        if predation_marks is not None:
+            predation_marks.update(prey[store.energy[prey] <= 0.0].tolist())
+
+    def _resolve_grazing(self, store: EntityStore, flora: np.ndarray | None, geom) -> None:
+        if flora is None or not self.eat_claims:
+            return
+        rows = np.concatenate([c[0] for c in self.eat_claims])
+        face = np.concatenate([c[1] for c in self.eat_claims])
+        ix = np.concatenate([c[2] for c in self.eat_claims])
+        iy = np.concatenate([c[3] for c in self.eat_claims])
+        bite = np.concatenate([c[4] for c in self.eat_claims])
+        gain = np.concatenate([c[5] for c in self.eat_claims])
+        s = int(flora.shape[-1])
+        key = (face * s + ix) * s + iy
+        # np.unique returns (unique, index, inverse) in THAT order regardless of
+        # kwarg order; keep the unpack matching it
+        cells, first, inv = np.unique(key, return_index=True, return_inverse=True)
+        inv = inv.reshape(-1)   # numpy 2.0 briefly returned a 2-D inverse
+        demand = np.zeros(cells.size)
+        np.add.at(demand, inv, bite)
+        gf, gix, giy = face[first], ix[first], iy[first]          # a cell per unique key
+        avail = (flora[gf, gix, giy] if geom is not None else flora[gix, giy]).astype(np.float64)
+        scale = np.ones(cells.size)
+        nz = demand > 0.0
+        scale[nz] = np.minimum(1.0, avail[nz] / demand[nz])       # over-grazed cells shared out
+        actual = bite * scale[inv]                                # each eater's real bite
+        np.add.at(store.energy, rows, (actual * gain).astype(np.float32))     # credit eaters
+        taken = np.zeros(cells.size)
+        np.add.at(taken, inv, actual)
+        if geom is not None:
+            flora[gf, gix, giy] -= taken.astype(np.float32)
+        else:
+            flora[gix, giy] -= taken.astype(np.float32)

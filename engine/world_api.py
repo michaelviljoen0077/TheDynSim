@@ -355,19 +355,22 @@ class WorldAPI:
     def is_hidden(self, handle: int) -> bool:
         return bool(self._world.store.hidden[self._row(handle)])
 
-    def attack(self, handle: int, amount: float) -> float:
-        """Engine-mediated predation: drain up to `amount` energy from any entity.
-
-        Returns the expected gain, computed against the target's tick-start
-        energy. The drain itself is command-buffered and applies after the
-        victim's own writes; a prey entity reaching energy <= 0 dies in the
-        engine sweep with cause 'predation'.
+    def attack(self, attacker: int, prey: int, amount: float,
+               efficiency: float = 0.8) -> float:
+        """Engine-mediated predation, ENERGY-CONSERVING. `attacker` (one of your
+        own entities) drains up to `amount` energy from `prey` (any entity),
+        keeping `efficiency` of what it actually gets. The engine credits your
+        attacker AT TICK END from the prey's ACTUAL energy — shared out if several
+        predators hit the same prey this tick — so you must NOT add the return
+        value to your own energy yourself (that would double-count / mint energy).
+        The return is only an estimate for logging. Prey reaching energy <= 0 dies
+        in the engine sweep with cause 'predation'.
         """
-        row = self._row(handle)
-        s = self._world.store
-        drained = min(float(s.energy[row]), max(0.0, float(amount)))
-        self._world.commands.drain_energy(handle, drained)
-        return drained
+        a = self._owned_row(attacker)
+        p = self._row(prey)
+        amt = max(0.0, float(amount))
+        self._world.commands.claim_prey(a, p, amt, float(efficiency))
+        return min(float(self._world.store.energy[p]), amt) * float(efficiency)
 
     # -- batch primitives (HERD-AT-ONCE, vectorized) -------------------------------
     # These process an entire OWNED species in one NumPy pass inside the engine, so
@@ -401,18 +404,16 @@ class WorldAPI:
         size = self._world.config.size
         ix = np.clip(s.px[rows].astype(np.int64), 0, size - 1)
         iy = np.clip(s.py[rows].astype(np.int64), 0, size - 1)
-        d = self._world.flora.density
-        if self._world.geom is not None:
-            face = s.face[rows].astype(np.int64)
-            avail = d[face, ix, iy]
-        else:
-            face = np.zeros(rows.size, dtype=np.int64)
-            avail = d[ix, iy]
-        bite = np.minimum(avail, float(rate)).astype(np.float32)
+        face = s.face[rows].astype(np.int64) if self._world.geom is not None \
+            else np.zeros(rows.size, dtype=np.int64)
+        # request up to `rate`, but cap the request so the resulting gain can't
+        # exceed each eater's headroom to max_energy. The engine resolves these
+        # claims against the cell's ACTUAL flora at tick end (conserving), so a
+        # crowded cell feeds its grazers proportionally instead of each in full.
+        g = float(gain)
         headroom = np.maximum(0.0, float(max_energy) - s.energy[rows])
-        egain = np.minimum(bite * float(gain), headroom).astype(np.float32)
-        self._world.commands.energy_delta_batch(rows, egain)
-        self._world.commands.flora_bite_batch(face, ix, iy, bite)
+        req = np.minimum(float(rate), headroom / g) if g > 0.0 else np.zeros(rows.size)
+        self._world.commands.claim_flora_batch(rows, face, ix, iy, req, g)
 
     def wander(self, species: str, speed: float, turn: float = 0.25) -> None:
         """Advance every member along a persistent per-entity 'heading' prop, with a
@@ -539,20 +540,22 @@ class WorldAPI:
         d = self._world.flora.density
         return float(d[face, ix, iy] if self._world.geom is not None else d[ix, iy])
 
-    def eat_flora(self, x: float, y: float, amount: float, face: int = 0) -> float:
-        """Consume flora at (x, y); returns the bite estimated against tick-start density.
-
-        The drain is command-buffered and applied at tick end (in submission order,
-        clamped), exactly like `attack`: every plugin reads tick-start flora during
-        the tick, execution order can't leak between plugins, and the grass can
-        never be over-consumed.
+    def eat_flora(self, eater: int, x: float, y: float, amount: float,
+                  gain: float, face: int = 0) -> float:
+        """Graze flora at (x, y), ENERGY-CONSERVING. `eater` (one of your own
+        entities) claims up to `amount` flora worth `gain` energy per unit. The
+        engine credits the eater AT TICK END from the cell's ACTUAL density —
+        shared out if several grazers hit the same cell — so do NOT add the return
+        to your own energy (it's only an estimate). The grass can never be
+        over-consumed or turned into free energy.
         """
+        row = self._owned_row(eater)
         ix, iy = self._cell(x, y)
+        self._world.commands.claim_flora(row, int(face), ix, iy,
+                                         max(0.0, float(amount)), float(gain))
         d = self._world.flora.density
         avail = float(d[face, ix, iy] if self._world.geom is not None else d[ix, iy])
-        bite = min(avail, max(0.0, float(amount)))
-        self._world.commands.eat_flora(ix, iy, bite, int(face))
-        return bite
+        return min(avail, max(0.0, float(amount))) * float(gain)
 
     def water_at(self, x: float, y: float, face: int = 0) -> bool:
         ix, iy = self._cell(x, y)

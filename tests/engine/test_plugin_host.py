@@ -130,7 +130,7 @@ def on_tick(world):
     for g in world.entities("grazer"):
         e = world.get(g, "energy") - 0.05
         x, y, _z = world.pos(g)
-        e += world.eat_flora(x, y, 0.03) * 60.0
+        world.eat_flora(g, x, y, 0.03, gain=60.0)
         world.set(g, "energy", min(e, 200.0))
         world.move(g, world.rng.uniform(-1, 1), world.rng.uniform(-1, 1))
 '''

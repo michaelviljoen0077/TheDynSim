@@ -24,18 +24,32 @@ def _apply(w):
                      flora=w.flora.density, heading_slots=w.registry.heading_slots_array())
 
 
-def test_metabolize_and_graze_compose_additively_on_energy():
+def test_metabolize_drains_the_whole_herd():
     w, api, sid = _world()
     rows = w.store.alive_indices(sid)
     e0 = w.store.energy[rows].copy()
-    w.flora.density[30, 30] = 1.0                 # rich cell under the whole flock
     api.on_tick_begin()
-    api.metabolize("sparrow", 5.0)                # -5
-    api.graze("sparrow", rate=0.5, gain=40.0)     # +min(1.0,0.5)*40 = +20
+    api.metabolize("sparrow", 5.0)
     _apply(w)
-    # the two batch energy effects SUM (compose), not overwrite: net +15
-    assert np.allclose(w.store.energy[rows] - e0, 15.0, atol=1e-2)
-    assert float(w.flora.density[30, 30]) < 1.0   # flora was actually drained
+    assert np.allclose(w.store.energy[rows] - e0, -5.0, atol=1e-3)
+
+
+def test_graze_conserves_energy_on_a_crowded_cell():
+    """20 grazers stacked on one cell can't each gain full energy — the engine
+    distributes the cell's ACTUAL flora, so total energy gained equals flora
+    consumed x gain (conservation), never 20x it."""
+    w, api, sid = _world()
+    rows = w.store.alive_indices(sid)
+    w.flora.density[30, 30] = 1.0
+    avail0 = float(w.flora.density[30, 30])
+    e0 = float(w.store.energy[rows].sum())
+    api.on_tick_begin()
+    api.graze("sparrow", rate=0.5, gain=40.0, max_energy=500.0)  # demand 20*0.5=10 >> 1.0 avail
+    _apply(w)
+    consumed = avail0 - float(w.flora.density[30, 30])
+    gained = float(w.store.energy[rows].sum()) - e0
+    assert consumed <= avail0 + 1e-6                 # can't eat more flora than exists
+    assert abs(gained - consumed * 40.0) < 1e-2      # energy gained == flora eaten x gain
 
 
 def test_wander_moves_the_herd_and_sets_headings():

@@ -28,34 +28,98 @@ log = logging.getLogger("genesis.governor")
 
 API_REFERENCE_PATH = Path(__file__).resolve().parent.parent / "docs" / "plugin_api.md"
 
-# Per-candidate strategy directives: rotated across the batch so N candidates
-# explore genuinely different moves instead of converging on one idea. Each
-# candidate also sees what its siblings already proposed (see _build_prompt).
+# Strategy directives. Rather than blind round-robin, each cycle SELECTS the
+# strategies that fit the observation report (see _select_strategies) so the
+# batch targets the world's actual weaknesses. Each candidate also sees what its
+# siblings already proposed (see _build_prompt).
+#
+# Placement rule threaded through the predation strategies: a plugin may only
+# MUTATE species it owns. Cross-species predation is initiated by the PREDATOR
+# (it finds prey with nearest() and eats via attack()) — never scripted from
+# inside the prey plugin. To wire a new prey into the food chain you MUTATE the
+# predator, you do not make the prey tell the predator to eat it.
 STRATEGIES = [
-    {"name": "fill an empty niche",
-     "directive": "Introduce a NEW species that occupies a stratum or trophic role "
-                  "currently unused or thinly populated (e.g. a sky forager, an aquatic "
-                  "swimmer with swim_speed>0, a decomposer, or a prey that hides/burrows "
-                  "via hide() to evade predators)."},
-    {"name": "refine a live plugin",
-     "directive": "Pick the WEAKEST existing plugin from the report and improve it via a "
-                  "lineage mutation: set PLUGIN_META['lineage_parent'] to its name, declare "
-                  "its species, and re-tune the numbers (speed, energy, reproduction). Do "
-                  "NOT just add a new species — rework an existing one."},
-    {"name": "add a trophic link",
-     "directive": "Add a species that connects existing ones into a longer food chain: a "
-                  "predator of an unpredated species, or prey for a struggling predator. "
-                  "Use world.attack for predation."},
-    {"name": "environmental engineer",
-     "directive": "Introduce a species whose main effect is on the environment or other "
-                  "species indirectly (spreads/consumes flora, migrates between strata) to "
-                  "improve stability or diversity without simply adding biomass."},
-    {"name": "omnivore / generalist",
+    {"id": "balance_update",
+     "name": "balance update (no new species)",
+     "directive": "Do NOT add a new species. Fix an imbalance you can see in the report — "
+                  "an overpopulation, a starving species (low mean_energy), or a boom/bust — "
+                  "by REBALANCING an existing plugin: set PLUGIN_META['lineage_parent'] to "
+                  "that plugin's name, re-declare its species, and re-tune the numbers "
+                  "(reproduction cost/rate/timing, energy gain, speed, lifespan, population "
+                  "caps). A pure tuning change is a valid, valuable move."},
+    {"id": "fill_niche",
+     "name": "fill an empty niche",
+     "directive": "Introduce a NEW species that occupies a stratum or trophic role currently "
+                  "unused or thinly populated (e.g. a sky forager, an aquatic swimmer with "
+                  "swim_speed>0, a decomposer, or a prey that hides/burrows via hide() to "
+                  "evade predators)."},
+    {"id": "refine_weakest",
+     "name": "refine the weakest plugin",
+     "directive": "Pick the WEAKEST existing plugin from the report (lowest/most fragile "
+                  "population, or quarantined) and improve it via a lineage mutation: set "
+                  "PLUGIN_META['lineage_parent'] to its name, declare its species, and re-tune "
+                  "it. Do NOT add a new species — rework an existing one."},
+    {"id": "add_predator",
+     "name": "add a predator for an unpredated species",
+     "directive": "Strengthen the food web by giving an over-abundant or UNPREDATED species a "
+                  "predator. PLACEMENT MATTERS: the hunting logic lives in the PREDATOR — it "
+                  "finds prey with world.nearest and eats via world.attack. If a suitable "
+                  "predator already exists but ignores this prey, MUTATE that predator "
+                  "(lineage_parent = its plugin name, re-declare its species) so it also hunts "
+                  "the target. Never script the predator from inside the prey plugin."},
+    {"id": "environmental_engineer",
+     "name": "environmental engineer",
+     "directive": "Introduce a species whose main effect is indirect — on flora or other "
+                  "species (spreads/consumes flora, disperses seed, moves between strata) — to "
+                  "improve stability or diversity without simply piling on biomass."},
+    {"id": "omnivore",
+     "name": "omnivore / generalist",
      "directive": "Introduce an OMNIVORE that both grazes flora (world.eat_flora) AND hunts "
-                  "prey (world.nearest + world.attack) — falling back to plants when prey is "
-                  "scarce. A generalist buffers the ecosystem against boom/bust in any single "
-                  "food source. Balance both intake rates so it doesn't out-compete specialists."},
+                  "prey (world.nearest + world.attack), falling back to plants when prey is "
+                  "scarce. A generalist buffers the ecosystem against boom/bust. Balance both "
+                  "intake rates so it doesn't out-compete specialists."},
 ]
+STRATEGY_BY_ID = {s["id"]: s for s in STRATEGIES}
+
+
+def _select_strategies(report: dict, n: int) -> list[dict]:
+    """Score strategies against the observation report and return the top `n`,
+    so a cycle targets the world's actual weaknesses instead of rotating blindly.
+
+    Signals are read defensively — a malformed/partial report must never crash a
+    cycle — and every strategy keeps a small floor score so the batch still
+    diverges when no signal dominates.
+    """
+    pops = report.get("populations", {}) or {}
+    live = {name: p for name, p in pops.items() if (p or {}).get("total", 0) > 0}
+    diversity = float(report.get("shannon_diversity", 0.0) or 0.0)
+    flora = float((report.get("flora", {}) or {}).get("mean_density", 0.0) or 0.0)
+    deaths = report.get("deaths_by_cause", {}) or {}
+    total_deaths = sum(sum((v or {}).values()) for v in deaths.values())
+    predation = sum((v or {}).get("predation", 0) for v in deaths.values())
+    pred_share = (predation / total_deaths) if total_deaths else 0.0
+    quarantined = any(pl.get("status") == "quarantined" for pl in report.get("plugins", []))
+    totals = [p.get("total", 0) for p in live.values()]
+    overpop = max(totals) if totals else 0
+    starving = any((p.get("mean_energy", 100.0) or 100.0) < 40.0 for p in live.values())
+
+    score = {s["id"]: 0.1 for s in STRATEGIES}  # floor so ties still vary
+    if overpop >= 400 or starving or quarantined:
+        score["balance_update"] += 2.0 + (1.0 if quarantined else 0.0)
+    if diversity < 1.0 or len(live) < 4:
+        score["fill_niche"] += 2.0
+    if len(live) >= 2:
+        score["refine_weakest"] += 0.6
+    # short food chain: lots of herbivores dying of starvation, little predation
+    if overpop >= 150 and pred_share < 0.2:
+        score["add_predator"] += 2.2
+    if flora < 0.1:
+        score["environmental_engineer"] += 1.5
+    if starving or (total_deaths and pred_share > 0.6):
+        score["omnivore"] += 1.2
+
+    ranked = sorted(STRATEGIES, key=lambda s: -score[s["id"]])
+    return [ranked[i % len(ranked)] for i in range(n)]
 
 
 def _species_of(source: str) -> list[str]:
@@ -168,11 +232,13 @@ class Orchestrator:
         tokens_in = tokens_out = 0
         proposals = []
         siblings: list[dict] = []  # what earlier candidates THIS cycle already proposed
+        # pick strategies that fit the report's weaknesses (not blind rotation)
+        selected = _select_strategies(report, cfg.n_candidates)
         for i in range(cfg.n_candidates):
             # each candidate gets a distinct strategy directive + the siblings
             # already proposed, so the batch diverges instead of collapsing to
             # three near-identical ideas
-            strategy = STRATEGIES[i % len(STRATEGIES)]
+            strategy = selected[i]
             prompt = self._build_prompt(report, recall, live_sources, strategy, siblings)
             try:
                 proposal, usage = self.provider.generate(prompt)
@@ -192,7 +258,7 @@ class Orchestrator:
         # validate, with one repair round-trip (Story 3.4 AC3)
         self.status = CycleStatus("validating", cycle_id)
         validated = []
-        base_prompt = self._build_prompt(report, recall, live_sources, STRATEGIES[0], [])
+        base_prompt = self._build_prompt(report, recall, live_sources, selected[0], [])
         for label, proposal in proposals:
             result = validate_plugin(proposal.plugin_source)
             if not result.ok:
@@ -376,6 +442,16 @@ real weakness (an empty stratum, a fragile or missing trophic level, low diversi
 Name the plugin and species yourself — do NOT reuse the reference's placeholder
 names ("example_plugin"/"example_species") and do NOT default to a "vole". Pick a
 creature that genuinely fits the niche you are filling.
+
+You do NOT have to add a species. Editing an existing plugin — rebalancing its
+numbers via a lineage mutation (PLUGIN_META['lineage_parent'] = the plugin's own
+name, re-declaring its species) — is an equally valid move, and often the right
+one when the report shows an overpopulation, starvation, or boom/bust.
+
+PLACEMENT: a plugin may only mutate species it OWNS. Put cross-species predation
+in the PREDATOR (it finds prey via world.nearest and eats via world.attack). To
+give an existing prey a new predator, MUTATE the predator so it hunts that prey —
+never write code inside a prey plugin that makes another species eat it.
 
 Your candidate will be tested in a shadow simulation and scored on diversity,
 stability, extinction avoidance, trophic balance, and sustainability — RELATIVE to

@@ -158,6 +158,13 @@ species count — is what limits performance. So:
   to `amount` energy from the target (applies at tick end, after the target's own
   writes). Returns the expected gain — credit it to your own entity via `set`.
 
+**Where predation code belongs.** You may only *mutate* species you own, but
+`attack` works on any target — do not abuse that. The hunter drives predation:
+put `nearest`+`attack` in the PREDATOR's `on_tick`, not in the prey's. Writing a
+prey plugin that makes its own predator eat it (or that attacks the predator to
+"defend" itself) is backwards and will be scored down. To give an existing prey a
+new predator, MUTATE the predator (lineage) so it hunts that prey.
+
 ### Give EXISTING creatures new abilities — don't just add species
 Prefer *mutating a live plugin* (`PLUGIN_META['lineage_parent']`) to grant its
 species a new behaviour over inventing yet another species. Abilities you can

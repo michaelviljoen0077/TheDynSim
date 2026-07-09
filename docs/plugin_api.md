@@ -289,9 +289,11 @@ wasting a niche.
 ## Reference plugins
 
 `plugins_examples/grazer.py` (herbivore: graze, flee predators, disperse,
-reproduce), `plugins_examples/predator.py` (hunt via `attack`, starve, reproduce),
-`plugins_examples/birds.py` (flocking with `world.store` shared heading + per-entity
-prop state). These are the canonical idioms — imitate their structure.
+reproduce, evolving speed gene), `plugins_examples/predator.py` (hunt via `attack`,
+night-rest, starve, reproduce), `plugins_examples/birds.py` (batched-primitive sky
+flock — metabolize/graze/wander/breed, no per-entity loop),
+`plugins_examples/fish.py` (aquatic grazer: swims in water, filter-feeds plankton,
+stays wet). These are the canonical idioms — imitate their structure.
 
 ## What gets your candidate rejected
 

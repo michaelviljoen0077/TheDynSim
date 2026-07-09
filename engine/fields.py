@@ -61,6 +61,15 @@ class Terrain:
             ]
         return self._land_points
 
+    @property
+    def water_points(self) -> list[tuple[int, int]]:
+        """Grid coords of open-water columns (for aquatic spawns)."""
+        if getattr(self, "_water_points", None) is None:
+            self._water_points = [
+                (int(a), int(b)) for a, b in np.argwhere(self.water_mask > 0.5).tolist()
+            ]
+        return self._water_points
+
     @classmethod
     def generate(cls, rng: np.random.Generator, size: int, octaves: int,
                  sea_level_quantile: float) -> Terrain:

@@ -645,3 +645,17 @@ class WorldAPI:
             min(float(gx) + float(self.rng.uniform(0, 1)), size - 1e-3),
             min(float(gy) + float(self.rng.uniform(0, 1)), size - 1e-3),
         )
+
+    def random_water_point(self) -> tuple[float, float]:
+        """A random OPEN-WATER location (for aquatic spawns) — the water mirror of
+        random_surface_point. On a cube it returns a point on face 0. Spawn a
+        swimmer (`swim_speed>0`) here so it can filter-feed plankton."""
+        size = self._world.config.size
+        terrain = self._world.terrain
+        water = terrain.water_points(0) if self._world.geom is not None else terrain.water_points
+        i = int(self.rng.integers(0, len(water)))
+        gx, gy = water[i]
+        return (
+            min(float(gx) + float(self.rng.uniform(0, 1)), size - 1e-3),
+            min(float(gy) + float(self.rng.uniform(0, 1)), size - 1e-3),
+        )

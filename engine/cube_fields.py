@@ -147,6 +147,14 @@ class CubeTerrain:
             ]
         return self._land_points[face]
 
+    def water_points(self, face: int) -> list[tuple[int, int]]:
+        if getattr(self, "_water_points", None) is None:
+            self._water_points = [
+                [(int(a), int(b)) for a, b in np.argwhere(self.water_mask[f] > 0.5).tolist()]
+                for f in range(NF)
+            ]
+        return self._water_points[face]
+
     def to_arrays(self) -> dict:
         return {f"cterrain_{n}": getattr(self, n) for n in self.FIELDS}
 

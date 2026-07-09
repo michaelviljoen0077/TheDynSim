@@ -373,6 +373,10 @@ Follow your assigned strategy above. Design ONE new plugin that makes the ecosys
 measurably richer or more stable. Analyze the observation report first — target a
 real weakness (an empty stratum, a fragile or missing trophic level, low diversity).
 
+Name the plugin and species yourself — do NOT reuse the reference's placeholder
+names ("example_plugin"/"example_species") and do NOT default to a "vole". Pick a
+creature that genuinely fits the niche you are filling.
+
 Your candidate will be tested in a shadow simulation and scored on diversity,
 stability, extinction avoidance, trophic balance, and sustainability — RELATIVE to
 a control run without it. It must beat "do nothing" to be promoted. Your own

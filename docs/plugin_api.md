@@ -18,9 +18,9 @@ so that snapshots, shadow forks, and rollback capture it completely.
 
 ```python
 PLUGIN_META = {
-    "name": "burrowing_vole",        # ^[a-z][a-z0-9_]{0,30}$
+    "name": "example_plugin",         # ^[a-z][a-z0-9_]{0,30}$ — INVENT your own name
     "contract": 1,                    # exactly 1
-    "species": ["vole"],              # species this plugin OWNS (writes require ownership)
+    "species": ["example_species"],   # species this plugin OWNS (writes require ownership)
     "lineage_parent": None,           # or the parent plugin's name if this mutates it
 }
 
@@ -30,6 +30,12 @@ def setup(world):
 def on_tick(world):
     """Runs every tick, in plugin promotion order."""
 ```
+
+> **`example_plugin` / `example_species` are PLACEHOLDERS.** Never ship them —
+> and don't fall back on a "vole": choose a fresh name and animal that fits the
+> niche your strategy is targeting (a sky forager, a swimmer, an omnivore, a
+> hider…). Reusing the placeholder or defaulting to the same creature every time
+> is a failure to read the world.
 
 ## Hard rules (validation failures)
 

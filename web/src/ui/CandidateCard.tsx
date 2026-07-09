@@ -28,7 +28,7 @@ interface FitnessBarsProps {
 }
 
 function FitnessBars({ breakdown }: FitnessBarsProps) {
-  const entries = Object.entries(breakdown);
+  const entries = Object.entries(breakdown ?? {});
   if (entries.length === 0) return null;
   const maxAbs = Math.max(1e-9, ...entries.map(([, v]) => Math.abs(v)));
   return (
@@ -64,8 +64,8 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
   const meta = candidate.meta ?? {};
   const hypothesis = meta.hypothesis ?? '';
   const validationErrors =
-    candidate.validation !== null && !candidate.validation.ok
-      ? candidate.validation.errors
+    candidate.validation && !candidate.validation.ok
+      ? candidate.validation.errors ?? []
       : [];
   const shadowReason =
     candidate.fate === 'rejected_shadow'
@@ -103,7 +103,7 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
             </div>
           )}
 
-          {candidate.fitness_breakdown !== null && (
+          {candidate.fitness_breakdown?.breakdown && (
             <div>
               <div className="evo-detail-k">fitness breakdown</div>
               <FitnessBars breakdown={candidate.fitness_breakdown.breakdown} />

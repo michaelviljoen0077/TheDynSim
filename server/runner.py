@@ -110,9 +110,11 @@ class EngineRunner:
     # per-plugin quotas and capability checks. They are the operator's hand, not
     # a plugin. Each returns a small result dict for the API to echo.
 
-    def _random_land_point(self, face: int) -> tuple[float, float]:
-        land = (self.world.terrain.land_points(face) if self.world.geom is not None
+    def _land_of(self, face: int):
+        return (self.world.terrain.land_points(face) if self.world.geom is not None
                 else self.world.terrain.land_points)
+
+    def _random_land_point(self, land) -> tuple[float, float]:
         gx, gy = land[int(self._god_rng.integers(0, len(land)))]
         size = self.world.config.size
         return (min(float(gx) + float(self._god_rng.uniform(0, 1)), size - 1e-3),
@@ -136,9 +138,9 @@ class EngineRunner:
             spawned = 0
             for _ in range(n):
                 face = int(self._god_rng.integers(0, nfaces))
-                if (self.world.terrain.land_points(face) if self.world.geom is not None
-                        else self.world.terrain.land_points):
-                    x, y = self._random_land_point(face)
+                land = self._land_of(face)
+                if land:
+                    x, y = self._random_land_point(land)
                     store.spawn(sp.id, x, y, 0.0, stratum, 100.0, plugin_id, face, genome)
                     spawned += 1
         return {"spawned": spawned, "species": species}

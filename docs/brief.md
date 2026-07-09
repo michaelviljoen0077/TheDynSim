@@ -11,6 +11,8 @@
 
 Genesis v2 is a self-evolving artificial-life simulator: a fully 3D layered world (underground, surface, sky) whose ecology is authored not by hand-written rules but by an **AI governor that writes, tests, and evolves the simulation's own code while it runs**.
 
+> **Descope note (implemented state):** the world became a cube-sphere planet with **two** active strata (surface & sky). The underground layer was cut — it read poorly and the governor over-fixated on it; creatures now "go to ground" via a `hide()`/burrow state. Underground references throughout this brief are historical.
+
 Where v1 let an LLM inject untested Python straight into a live simulation and hoped for the best, v2 turns the loop into a genuine **evolutionary process for code**: each cycle the governor generates several candidate plugins, runs each in a parallel *shadow simulation* (a forked, headless copy of the world), scores the outcomes against ecological fitness metrics, promotes only the winner, and records everything — hypothesis, experiment, result — in a persistent lab notebook it consults on every future cycle.
 
 The product is both a mesmerizing thing to watch (a 3D world visibly growing more complex over hours) and a serious experiment platform for LLM-driven code evolution.

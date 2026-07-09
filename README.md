@@ -1,6 +1,6 @@
 # Genesis v2 — The Living World
 
-A self-evolving 3D artificial-life simulator: a layered world (underground / surface / sky)
+A self-evolving 3D artificial-life simulator: a cube-sphere planet (surface & sky strata)
 whose ecology is authored by an **AI governor that writes, shadow-tests, and promotes its own
 plugins by measured ecological fitness** — running fully offline on a local GPU.
 
@@ -11,7 +11,7 @@ Spec package: [docs/brief.md](docs/brief.md) → [docs/prd.md](docs/prd.md) →
 
 ```powershell
 python -m pip install -e .[dev,server]
-python -m pytest                      # 25 tests: determinism, snapshots, streaming, GIL gate
+python -m pytest                      # 155 tests: determinism, snapshots, energy conservation, governor
 python scripts/bench_engine.py        # benchmark protocol (docs/architecture.md)
 ```
 
@@ -22,9 +22,20 @@ cd web; npm install; npm run build; cd ..
 python -m uvicorn server.app:app --port 8000
 ```
 
-Open http://localhost:8000 — live 3D world with day-night cycle, weather, a grazing
-herd and a bird flock, stratum toggles, and run controls. For frontend dev with HMR:
-`cd web; npm run dev` (Vite proxies to :8000).
+Open http://localhost:8000 — live cube-sphere planet with day-night cycle, weather, a
+grazing herd and a bird flock, overlays, god-mode controls, and run controls. For
+frontend dev with HMR: `cd web; npm run dev` (Vite proxies to :8000).
+
+**To see it self-evolve** (the headline feature) you need a local **Ollama** with the
+governor model — otherwise the world runs but never evolves:
+
+```powershell
+ollama serve            # in one terminal
+ollama pull qwen3-coder:30b
+```
+
+Start the server with Ollama running and the governor comes online automatically
+(watch the startup log). Everything else works without it.
 
 > **Security:** `/api/plugins/install` compiles and `exec`s plugin source. The AST
 > validator + restricted builtins are an *accidental-damage* gate, not a sandbox

@@ -109,7 +109,14 @@ def create_app(seed: int = 424242, world_size: int = 384, topology: str = "cube"
         log.info("governor configured with %s", provider.name)
     else:
         app.state.orchestrator = None
-        log.warning("Ollama unreachable or model missing — governor disabled for this run")
+        log.warning(
+            "=" * 72 + "\n"
+            "  GOVERNOR DISABLED: Ollama not reachable (or model missing).\n"
+            "  The world will still run, but it will NOT self-evolve — the headline\n"
+            "  feature is inactive. To enable it: install Ollama, run `ollama serve`,\n"
+            "  and `ollama pull %s`, then restart this server.\n" + "=" * 72,
+            provider.model,
+        )
 
     # -- REST control -------------------------------------------------------
 

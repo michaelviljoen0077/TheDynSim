@@ -34,7 +34,7 @@ Common header: 4 × uint32 = 16 bytes: `[kind, tick, epoch, n]`.
 - `float32 x[N]`, `float32 y[N]`, `float32 z[N]` — z is offset within stratum band
 - `float32 energy[N]`
 - `uint16 species[N]`
-- `uint8 stratum[N]` — 0 underground, 1 surface, 2 sky
+- `uint8 stratum[N]` — 0 underground, 1 surface, 2 sky (underground descoped: only 1/2 occur in the live world)
 - `uint8 face[N]` — cube face 0..5 (always 0 on flat/wrap)
 
 **kind 3 — field** (`n` = grid side `S`): `uint32 fieldId`, `uint32 face`, then:
@@ -54,9 +54,16 @@ Six faces, each an `S`×`S` grid. A face-local point maps to 3D on the `[-1,1]³
 Spherify (morph cube→ball): `x·√(1−y²/2−z²/2+y²z²/3)` and cyclic for y,z.
 
 ## REST `/api`
-- `GET  /api/state` → `{"running":bool,"tick":int,"epoch":int,"tps":float,"entities":int,"targetTps":float}`
-- `POST /api/control/start` · `/pause` · `/step` · `/reset`
-- `POST /api/control/speed` body `{"tps": float}` (target tick rate, 1–240)
+- `GET  /api/state` → `{"running","tick","epoch","tps","entities","targetTps","capsEnabled"}`
+- `POST /api/control/start` · `/pause` · `/step` · `/reset` · `/speed` (`{"tps":1–240}`)
+- `POST /api/god/{spawn,cull,flora,caps}` — operator ("god") interventions
+- `POST /api/governor/auto` `{"enabled":bool}` — toggle automatic evolution
+
+> **Operator settings are NOT snapshotted.** `capsEnabled` (population ceilings) and
+> the governor's auto-evolve flag are runtime toggles, not world state — a snapshot
+> load / shadow fork / rollback always resumes with caps ON and auto-evolve at its
+> default. They therefore don't participate in `seed + intervention log ⇒ state`
+> replay; treat them as live-session-only knobs.
 
 Static: server serves `web/dist` at `/` when present. Dev: Vite proxies `/api` and `/ws`
 to `http://localhost:8000`.

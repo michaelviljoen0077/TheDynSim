@@ -28,7 +28,10 @@ def setup(world):
 def on_tick(world):
     wolves_exist = world.count("wolf") > 0
     for grazer in world.entities("grazer"):
-        energy = world.get(grazer, "energy") - 0.08
+        # Hungrier upkeep so the herd is genuinely FOOD-limited at a healthy flora
+        # level, and settles below the safety ceiling instead of overgrazing the
+        # planet bare and pinning at the cap (soft equilibrium, not a hard wall).
+        energy = world.get(grazer, "energy") - 0.15
         x, y, _z = world.pos(grazer)
         f = world.face(grazer)  # cube face (0 on flat/wrap): read the ground we're on
 
@@ -45,7 +48,7 @@ def on_tick(world):
             continue
 
         eaten = world.eat_flora(x, y, 0.03, f)
-        energy += eaten * 32.0
+        energy += eaten * 22.0
         world.set(grazer, "energy", min(energy, 200.0))
         # energy <= 0 is handled by the engine death sweep
 
@@ -101,9 +104,9 @@ def on_tick(world):
                                 y + world.rng.uniform(-2, 2),
                                 stratum=world.SURFACE, energy=45.0, face=f,
                                 parent=grazer)  # inherit speed gene (mutated)
-        elif energy > 165.0 and world.get(grazer, "age") > 200:
+        elif energy > 135.0 and world.get(grazer, "age") > 200:
             # density-dependent conception: crowded or overgrazed ground means no
             # pregnancy — the herd saturates against its resources
             if world.flora_at(x, y, f) > 0.06 and len(world.within(grazer, 5.0, species="grazer")) < 4:
                 world.set(grazer, "gestation", 160.0)   # ~1.3 days of pregnancy
-                world.set(grazer, "energy", energy - 55.0)
+                world.set(grazer, "energy", energy - 50.0)

@@ -55,6 +55,9 @@ def build_report(world: World, prev: dict | None = None) -> dict:
             "mean_density": round(float(world.flora.density.mean()), 4),
             "coverage_over_10pct": round(float((world.flora.density > 0.1).mean()), 4),
         },
+        "plankton": {   # aquatic food (open water) — the fish/filter-feeder niche
+            "mean_density": round(float(world.plankton.density.mean()), 4),
+        },
         "weather": {
             "temperature_mean": round(float(w.temperature.mean()), 2),
             "temperature_min": round(float(w.temperature.min()), 2),

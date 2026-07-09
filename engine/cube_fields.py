@@ -285,3 +285,42 @@ class CubeFlora:
         f = cls(size)
         f.density = arrays["cflora_density"].copy()
         return f
+
+
+class CubePlankton:
+    """Aquatic food field — the water-borne mirror of flora. Blooms on open water
+    (never on land), so fish have a food source and the ocean is a real niche."""
+
+    def __init__(self, size: int) -> None:
+        self.size = size
+        self.density = np.zeros((NF, size, size), dtype=np.float32)
+
+    @classmethod
+    def generate(cls, rng, size, terrain: CubeTerrain) -> CubePlankton:
+        p = cls(size)
+        seedbed = _surface_noise_stack(rng, size, 3)
+        p.density = np.clip(seedbed * 0.9 * terrain.water_mask, 0.0, 1.0).astype(np.float32)
+        return p
+
+    def step(self, terrain: CubeTerrain, weather: CubeWeather, season_frac: float,
+             dt: int = 1) -> None:
+        water = terrain.water_mask
+        light = 0.6 + 0.4 * float(np.sin(2 * np.pi * season_frac - np.pi / 2))
+        temp_factor = np.exp(-((weather.temperature - 16.0) / 16.0) ** 2)   # mild warm bloom
+        growth = 0.05 * dt * light * temp_factor
+        self.density += growth * self.density * (1.0 - self.density)
+        spread = _blur(self.density) - self.density
+        self.density += 0.06 * dt * np.clip(spread, 0.0, None)
+        self.density *= water                              # only on open water
+        self.density = np.maximum(self.density, 0.02 * water)   # trace re-seed for recovery
+        np.clip(self.density, 0.0, 1.0, out=self.density)
+
+    def to_arrays(self) -> dict:
+        return {"cplankton_density": self.density}
+
+    @classmethod
+    def from_arrays(cls, arrays: dict, size: int) -> CubePlankton:
+        p = cls(size)
+        if "cplankton_density" in arrays:      # back-compat: pre-plankton snapshots
+            p.density = arrays["cplankton_density"].copy()
+        return p

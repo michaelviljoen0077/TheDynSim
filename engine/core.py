@@ -14,7 +14,7 @@ from engine.commands import CommandBuffer
 from engine.config import WorldConfig
 from engine.cube import CubeGeometry
 from engine.entities import SKY, SURFACE, UNDERGROUND, EntityStore, SpeciesRegistry, make_handle
-from engine.fields import Flora, Terrain, Weather
+from engine.fields import Flora, Plankton, Terrain, Weather
 from engine.spatial import SpatialHash
 
 STRATA = {"underground": UNDERGROUND, "surface": SURFACE, "sky": SKY}
@@ -74,18 +74,20 @@ class World:
         self._crowding_marks: set[int] = set()    # transient within a tick
         if _generate:
             if config.cube:
-                from engine.cube_fields import CubeFlora, CubeTerrain, CubeWeather
+                from engine.cube_fields import CubeFlora, CubePlankton, CubeTerrain, CubeWeather
                 self.terrain = CubeTerrain.generate(
                     self.rng, config.size, config.terrain_octaves, config.sea_level_quantile
                 )
                 self.weather = CubeWeather(config.size)
                 self.flora = CubeFlora.generate(self.rng, config.size, self.terrain)
+                self.plankton = CubePlankton.generate(self.rng, config.size, self.terrain)
             else:
                 self.terrain = Terrain.generate(
                     self.rng, config.size, config.terrain_octaves, config.sea_level_quantile
                 )
                 self.weather = Weather(config.size)
                 self.flora = Flora.generate(self.rng, config.size, self.terrain)
+                self.plankton = Plankton.generate(self.rng, config.size, self.terrain)
 
     def daylight_at(self, face: int, x: float, y: float) -> float:
         """Local solar illumination at a location, in [-1, 1] (1 = sun overhead,
@@ -142,6 +144,7 @@ class World:
             dt = self.config.field_step_every
             self.weather.step(self.rng, self.terrain, self.day_frac, self.season_frac)
             self.flora.step(self.terrain, self.weather, self.season_frac, dt=dt)
+            self.plankton.step(self.terrain, self.weather, self.season_frac, dt=dt)
         if self.geom is not None:
             self.spatial3d.rebuild(self.store)
         else:
@@ -154,7 +157,8 @@ class World:
                             swim_speeds=self.registry.swim_speeds_array(),
                             wrap=self.config.wrap, geom=self.geom,
                             heading_slots=self.registry.heading_slots_array(),
-                            speed_gene_slots=self.registry.gene_slot_array("speed"))
+                            speed_gene_slots=self.registry.gene_slot_array("speed"),
+                            plankton=self.plankton.density)
         self._water_effects()
         self._gene_costs()
         self._crowding_stress()

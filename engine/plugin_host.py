@@ -165,7 +165,8 @@ class PluginHost:
                                       speeds=self.world.registry.speeds_array(),
                                       water=self.world.terrain.water_mask,
                                       swim_speeds=self.world.registry.swim_speeds_array(),
-                                      wrap=self.world.config.wrap, geom=self.world.geom)
+                                      wrap=self.world.config.wrap, geom=self.world.geom,
+                                      plankton=self.world.plankton.density)
             # mark whether setup established a population, so a species that lives
             # and dies entirely between reap sweeps is still seen as having existed
             record.ever_populated = any(

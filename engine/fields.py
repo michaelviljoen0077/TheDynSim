@@ -199,3 +199,41 @@ class Flora:
         f = cls(size)
         f.density = arrays["flora_density"].copy()
         return f
+
+
+class Plankton:
+    """Aquatic food field — the water-borne mirror of flora. Blooms on open water
+    (never on land), giving fish a food source and making the ocean a real niche."""
+
+    def __init__(self, size: int) -> None:
+        self.density = np.zeros((size, size), dtype=np.float32)
+
+    @classmethod
+    def generate(cls, rng: np.random.Generator, size: int, terrain: Terrain) -> Plankton:
+        p = cls(size)
+        seedbed = fractal_noise(rng, size, 3)
+        p.density = np.clip(seedbed * 0.9 * terrain.water_mask, 0.0, 1.0).astype(np.float32)
+        return p
+
+    def step(self, terrain: Terrain, weather: Weather, season_frac: float,
+             dt: int = 1) -> None:
+        water = terrain.water_mask
+        light = 0.6 + 0.4 * float(np.sin(2 * np.pi * season_frac - np.pi / 2))
+        temp_factor = np.exp(-((weather.temperature - 16.0) / 16.0) ** 2)
+        growth = 0.05 * dt * light * temp_factor
+        self.density += growth * self.density * (1.0 - self.density)
+        spread = _blur(self.density) - self.density
+        self.density += 0.06 * dt * np.clip(spread, 0.0, None)
+        self.density *= water
+        self.density = np.maximum(self.density, 0.02 * water)
+        np.clip(self.density, 0.0, 1.0, out=self.density)
+
+    def to_arrays(self) -> dict[str, np.ndarray]:
+        return {"plankton_density": self.density}
+
+    @classmethod
+    def from_arrays(cls, arrays: dict[str, np.ndarray], size: int) -> Plankton:
+        p = cls(size)
+        if "plankton_density" in arrays:       # back-compat: pre-plankton snapshots
+            p.density = arrays["plankton_density"].copy()
+        return p

@@ -232,6 +232,11 @@ smarter existing species, not more of them.
   density — shared out if several grazers hit the same cell — so **do NOT add the
   return to your own energy** (it's only an estimate). Or use the batched
   `world.graze(species, rate, gain, max_energy)` for a whole herd at once.
+- `world.plankton_at(x, y) -> 0..1` — aquatic food density (nonzero only over open
+  water); `world.eat_plankton(eater, x, y, amount, gain, face=0)` — filter-feed it
+  (same energy-conserving contract as eat_flora). Batched: `world.graze(species,
+  rate, gain, max_energy, on="plankton")`. This is the FISH / aquatic niche — a
+  swimmer (`swim_speed>0`) that grazes plankton feeds where land animals can't.
 - `world.water_at(x, y) -> bool` · `world.height_at(x, y) -> 0..1` · `world.temperature_at(x, y)`
 - `world.weather() -> {"temperature", "precipitation"}` (world means)
 - `world.season() -> 0..1` (0 spring equinox) · `world.day_frac() -> 0..1` (0 midnight, 0.5 noon)

@@ -17,7 +17,7 @@ import numpy as np
 from engine.config import WorldConfig
 from engine.core import World
 from engine.entities import EntityStore, SpeciesRegistry
-from engine.fields import Flora, Terrain, Weather
+from engine.fields import Flora, Plankton, Terrain, Weather
 
 FORMAT_VERSION = 1
 
@@ -46,6 +46,7 @@ def _arrays(world: World) -> dict[str, np.ndarray]:
     arrays.update(world.terrain.to_arrays())
     arrays.update(world.weather.to_arrays())
     arrays.update(world.flora.to_arrays())
+    arrays.update(world.plankton.to_arrays())
     return arrays
 
 
@@ -96,14 +97,16 @@ def load_snapshot(path: str | Path) -> World:
                                                 config.max_gene_slots)
     world.store = EntityStore.from_arrays(arrays, config.max_prop_slots)
     if config.cube:
-        from engine.cube_fields import CubeFlora, CubeTerrain, CubeWeather
+        from engine.cube_fields import CubeFlora, CubePlankton, CubeTerrain, CubeWeather
         world.terrain = CubeTerrain.from_arrays(arrays)
         world.weather = CubeWeather.from_arrays(arrays, config.size)
         world.flora = CubeFlora.from_arrays(arrays, config.size)
+        world.plankton = CubePlankton.from_arrays(arrays, config.size)
     else:
         world.terrain = Terrain.from_arrays(arrays)
         world.weather = Weather.from_arrays(arrays, config.size)
         world.flora = Flora.from_arrays(arrays, config.size)
+        world.plankton = Plankton.from_arrays(arrays, config.size)
     for name, state in header["plugin_rng_states"].items():
         g = np.random.default_rng()
         g.bit_generator.state = state

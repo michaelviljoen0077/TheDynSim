@@ -393,10 +393,13 @@ class WorldAPI:
             self._world.commands.energy_delta_batch(
                 rows, np.full(rows.size, -float(amount), dtype=np.float32))
 
-    def graze(self, species: str, rate: float, gain: float, max_energy: float = 200.0) -> None:
-        """Every member grazes flora at its own cell: bite up to `rate`, convert to
-        `gain` energy per unit (capped so nobody exceeds `max_energy`). Flora is
-        drained (clamped, can't go negative) exactly like eat_flora."""
+    def graze(self, species: str, rate: float, gain: float, max_energy: float = 200.0,
+              on: str = "flora") -> None:
+        """Every member grazes at its own cell: bite up to `rate`, convert to `gain`
+        energy per unit (capped so nobody exceeds `max_energy`). `on="flora"` (land)
+        or `on="plankton"` (water — fish/filter-feeders). The engine resolves the
+        claims against the cell's ACTUAL density at tick end (energy-conserving), so
+        a crowded cell feeds its grazers proportionally instead of each in full."""
         _sp, rows = self._owned_rows(species)
         if not rows.size:
             return
@@ -406,14 +409,13 @@ class WorldAPI:
         iy = np.clip(s.py[rows].astype(np.int64), 0, size - 1)
         face = s.face[rows].astype(np.int64) if self._world.geom is not None \
             else np.zeros(rows.size, dtype=np.int64)
-        # request up to `rate`, but cap the request so the resulting gain can't
-        # exceed each eater's headroom to max_energy. The engine resolves these
-        # claims against the cell's ACTUAL flora at tick end (conserving), so a
-        # crowded cell feeds its grazers proportionally instead of each in full.
         g = float(gain)
         headroom = np.maximum(0.0, float(max_energy) - s.energy[rows])
         req = np.minimum(float(rate), headroom / g) if g > 0.0 else np.zeros(rows.size)
-        self._world.commands.claim_flora_batch(rows, face, ix, iy, req, g)
+        if on == "plankton":
+            self._world.commands.claim_plankton_batch(rows, face, ix, iy, req, g)
+        else:
+            self._world.commands.claim_flora_batch(rows, face, ix, iy, req, g)
 
     def wander(self, species: str, speed: float, turn: float = 0.25) -> None:
         """Advance every member along a persistent per-entity 'heading' prop, with a
@@ -554,6 +556,25 @@ class WorldAPI:
         self._world.commands.claim_flora(row, int(face), ix, iy,
                                          max(0.0, float(amount)), float(gain))
         d = self._world.flora.density
+        avail = float(d[face, ix, iy] if self._world.geom is not None else d[ix, iy])
+        return min(avail, max(0.0, float(amount))) * float(gain)
+
+    def plankton_at(self, x: float, y: float, face: int = 0) -> float:
+        """Aquatic food density (0..1) at a cell — nonzero only over open water."""
+        ix, iy = self._cell(x, y)
+        d = self._world.plankton.density
+        return float(d[face, ix, iy] if self._world.geom is not None else d[ix, iy])
+
+    def eat_plankton(self, eater: int, x: float, y: float, amount: float,
+                     gain: float, face: int = 0) -> float:
+        """Filter-feed plankton at (x, y) — the aquatic mirror of eat_flora, same
+        ENERGY-CONSERVING contract (engine credits the eater at tick end; the
+        return is only an estimate). Nonzero food only over open water."""
+        row = self._owned_row(eater)
+        ix, iy = self._cell(x, y)
+        self._world.commands.claim_plankton(row, int(face), ix, iy,
+                                             max(0.0, float(amount)), float(gain))
+        d = self._world.plankton.density
         avail = float(d[face, ix, iy] if self._world.geom is not None else d[ix, iy])
         return min(avail, max(0.0, float(amount))) * float(gain)
 

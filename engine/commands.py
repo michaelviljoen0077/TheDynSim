@@ -42,7 +42,8 @@ class CommandBuffer:
     # tick end the engine sums each resource's claims and distributes only what is
     # actually there (proportionally if over-subscribed), so N consumers of one
     # cell/prey can never mint energy from tick-start estimates.
-    eat_claims: list[tuple] = field(default_factory=list)      # (rows, face, ix, iy, bite, gain) arrays
+    eat_claims: list[tuple] = field(default_factory=list)      # flora: (rows, face, ix, iy, bite, gain)
+    plankton_claims: list[tuple] = field(default_factory=list)  # plankton: same shape (aquatic food)
     attack_claims: list[tuple] = field(default_factory=list)   # (attacker_row, prey_row, amount, eff)
 
     def spawn(self, species_id: int, x: float, y: float, z: float,
@@ -113,6 +114,20 @@ class CommandBuffer:
                                 bite.astype(np.float64),
                                 np.full(rows.size, float(gain), dtype=np.float64)))
 
+    def claim_plankton(self, row: int, face: int, ix: int, iy: int,
+                       bite: float, gain: float) -> None:
+        """Like claim_flora but against the aquatic plankton field (fish food)."""
+        self.plankton_claims.append((np.array([row], dtype=np.int64), np.array([face], dtype=np.int64),
+                                     np.array([ix], dtype=np.int64), np.array([iy], dtype=np.int64),
+                                     np.array([bite], dtype=np.float64), np.array([gain], dtype=np.float64)))
+
+    def claim_plankton_batch(self, rows: np.ndarray, face: np.ndarray, ix: np.ndarray,
+                             iy: np.ndarray, bite: np.ndarray, gain: float) -> None:
+        self.plankton_claims.append((rows.astype(np.int64), face.astype(np.int64),
+                                     ix.astype(np.int64), iy.astype(np.int64),
+                                     bite.astype(np.float64),
+                                     np.full(rows.size, float(gain), dtype=np.float64)))
+
     def claim_prey(self, attacker_row: int, prey_row: int, amount: float,
                    efficiency: float) -> None:
         """Predation claim: `attacker` drains up to `amount` from `prey`, keeping
@@ -129,7 +144,8 @@ class CommandBuffer:
               wrap: bool = False,
               geom=None,
               heading_slots: np.ndarray | None = None,
-              speed_gene_slots: np.ndarray | None = None) -> None:
+              speed_gene_slots: np.ndarray | None = None,
+              plankton: np.ndarray | None = None) -> None:
         """Apply ops in submission order (deterministic).
 
         Topology: `geom` (a CubeGeometry) folds edge-crossers onto neighbour
@@ -324,7 +340,8 @@ class CommandBuffer:
         # estimates. Applied after the per-op loop, so a consumer's own set_energy
         # this tick has already landed and the credit stacks on top.
         self._resolve_predation(store, predation_marks)
-        self._resolve_grazing(store, flora, geom)
+        self._resolve_field_claims(store, flora, geom, self.eat_claims)
+        self._resolve_field_claims(store, plankton, geom, self.plankton_claims)
 
         self.flora_bites.clear()
         self.ops.clear()
@@ -332,6 +349,7 @@ class CommandBuffer:
         self.batch_moves.clear()
         self.batch_flora.clear()
         self.eat_claims.clear()
+        self.plankton_claims.clear()
         self.attack_claims.clear()
 
     def _resolve_predation(self, store: EntityStore, predation_marks: set[int] | None) -> None:
@@ -361,15 +379,19 @@ class CommandBuffer:
         if predation_marks is not None:
             predation_marks.update(prey[store.energy[prey] <= 0.0].tolist())
 
-    def _resolve_grazing(self, store: EntityStore, flora: np.ndarray | None, geom) -> None:
-        if flora is None or not self.eat_claims:
+    def _resolve_field_claims(self, store: EntityStore, field: np.ndarray | None, geom,
+                              claims: list[tuple]) -> None:
+        """Distribute a shared resource field (flora or plankton) among its
+        claimants at tick end and credit each its real share (energy-conserving)."""
+        if field is None or not claims:
             return
-        rows = np.concatenate([c[0] for c in self.eat_claims])
-        face = np.concatenate([c[1] for c in self.eat_claims])
-        ix = np.concatenate([c[2] for c in self.eat_claims])
-        iy = np.concatenate([c[3] for c in self.eat_claims])
-        bite = np.concatenate([c[4] for c in self.eat_claims])
-        gain = np.concatenate([c[5] for c in self.eat_claims])
+        flora = field
+        rows = np.concatenate([c[0] for c in claims])
+        face = np.concatenate([c[1] for c in claims])
+        ix = np.concatenate([c[2] for c in claims])
+        iy = np.concatenate([c[3] for c in claims])
+        bite = np.concatenate([c[4] for c in claims])
+        gain = np.concatenate([c[5] for c in claims])
         s = int(flora.shape[-1])
         key = (face * s + ix) * s + iy
         # np.unique returns (unique, index, inverse) in THAT order regardless of

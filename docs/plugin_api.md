@@ -297,8 +297,8 @@ wasting a niche.
 reproduce, evolving speed gene), `plugins_examples/predator.py` (hunt via `attack`,
 night-rest, starve, reproduce), `plugins_examples/birds.py` (batched-primitive sky
 flock — metabolize/graze/wander/breed, no per-entity loop),
-`plugins_examples/fish.py` (aquatic grazer: swims in water, filter-feeds plankton,
-stays wet), `plugins_examples/shark.py` (aquatic predator: hunts fish, pack size
+`plugins_examples/fish.py` (batched aquatic grazer: filter-feeds plankton, no
+per-fish loop — stays in the water because that is where its food is), `plugins_examples/shark.py` (aquatic predator: hunts fish, pack size
 rides on prey abundance), `plugins_examples/raptor.py` (sky predator: stoops on the
 bird flock via nearest_many+attack, so birds can run capless under predation).
 These are the canonical idioms — imitate their structure.

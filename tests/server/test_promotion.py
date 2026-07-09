@@ -65,7 +65,8 @@ def test_failed_setup_does_not_taint_live_world(client):
 
 def test_promote_quarantine_rollback(client):
     base = {p["name"] for p in client.get("/api/plugins").json()}
-    assert base == {"grazer_herd", "wolf_pack", "sky_flock"}
+    assert base == {"grazer_herd", "wolf_pack", "sky_flock",
+                    "fish_shoal", "shark_school", "raptor_wing"}
 
     r = client.post("/api/plugins/install", json={"source": BAD_AT_RUNTIME}).json()
     assert r.get("installed") == "saboteur"

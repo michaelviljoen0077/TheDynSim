@@ -22,7 +22,8 @@ from server import protocol
 from server.runner import EngineRunner
 
 PLUGINS_DIR = Path(__file__).resolve().parent.parent / "plugins_examples"
-BASE_PLUGINS = ("grazer.py", "predator.py", "birds.py")
+BASE_PLUGINS = ("grazer.py", "predator.py", "birds.py",
+                "fish.py", "shark.py", "raptor.py")
 
 log = logging.getLogger("genesis.server")
 

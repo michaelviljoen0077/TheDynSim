@@ -467,19 +467,53 @@ class WorldAPI:
 
     def breed(self, species: str, energy_over: float, cost: float,
               offspring_energy: float | None = None, cap: int | None = None,
-              crowd_max: int | None = None, crowd_radius: float = 8.0) -> int:
-        """Every member whose energy exceeds `energy_over` spawns one offspring
-        (jittered to its position), paying `cost` energy. Returns how many bred.
+              crowd_max: int | None = None, crowd_radius: float = 8.0,
+              gestation: float = 0.0, litter: int = 1) -> int:
+        """Batched reproduction for a whole species. A member over `energy_over`
+        energy breeds, paying `cost` and producing `litter` young. Returns young born.
 
-        For a SOFT equilibrium (preferred over a hard `cap`), pass `crowd_max`: an
-        entity only breeds where it has at most `crowd_max` same-species neighbours
-        within `crowd_radius`, so the birth rate falls as density rises and the
-        population settles at the land's carrying capacity — density-dependent
-        reproduction, the textbook logistic control. `cap` is a hard backstop."""
+        `gestation` (ticks, needs a "gestation" prop): reproduction becomes a
+        PERIOD, not an instant — an eligible parent starts a pregnancy (pays cost,
+        sets its gestation timer) and delivers the whole `litter` only at term.
+        Real ecology: PREY are r-strategists (short-ish gestation, BIG litters, to
+        out-breed predation); PREDATORS are K-strategists (long gestation, 1-2
+        young). `gestation=0` spawns instantly.
+
+        `crowd_max`: density-dependent birth control (a soft carrying capacity).
+        `cap`: hard backstop on the species total."""
         sp, rows = self._owned_rows(species)
         if not rows.size:
             return 0
         s = self._world.store
+        litter = max(1, int(litter))
+        off_e = float(offspring_energy) if offspring_energy is not None else float(cost)
+        gslot = sp.prop_slots.get("gestation") if float(gestation) > 0.0 else None
+
+        if gslot is not None:
+            gest = s.props[rows, gslot].astype(np.float64)
+            pregnant = gest > 0.0
+            born = 0
+            due = rows[pregnant & (gest <= 1.0)]
+            if due.size:                                    # deliver at term
+                self._spawn_offspring(species, sp, due, litter, off_e)
+                born = int(due.size) * litter
+            # advance ongoing pregnancies; delivered/non-pregnant sit at 0
+            s.props[rows, gslot] = np.where(
+                pregnant, np.maximum(0.0, gest - 1.0), 0.0).astype(np.float32)
+            # start NEW pregnancies among fed, non-pregnant, uncrowded members
+            start = (~pregnant) & (s.energy[rows] > float(energy_over))
+            if crowd_max is not None:
+                start &= self._local_density(rows, float(crowd_radius)) <= int(crowd_max)
+            if cap is not None and int(rows.size) >= int(cap):
+                return born
+            starters = rows[start]
+            if starters.size:
+                s.props[starters, gslot] = float(gestation)
+                self._world.commands.energy_delta_batch(
+                    starters, np.full(starters.size, -float(cost), dtype=np.float32))
+            return born
+
+        # instant path (no gestation)
         mask = s.energy[rows] > float(energy_over)
         if crowd_max is not None:
             mask &= self._local_density(rows, float(crowd_radius)) <= int(crowd_max)
@@ -492,23 +526,29 @@ class WorldAPI:
                 eligible = eligible[:room]
         if not eligible.size:
             return 0
-        off_e = float(offspring_energy) if offspring_energy is not None else float(cost)
         self._world.commands.energy_delta_batch(
             eligible, np.full(eligible.size, -float(cost), dtype=np.float32))
-        # offspring inherit each parent's genome with gaussian mutation (natural
-        # selection acts on the result); geneless species pass genome=None
-        child_g = self._mutated_offspring_genomes(sp, eligible)
-        px = s.px[eligible].tolist()
-        py = s.py[eligible].tolist()
-        pz = s.pz[eligible].tolist()
-        strat = s.stratum[eligible].tolist()
-        face = s.face[eligible].tolist()
-        for k, (x, y, z, st, fc) in enumerate(zip(px, py, pz, strat, face, strict=True)):
-            self.spawn(species, x + self.rng.uniform(-1.5, 1.5),
-                       y + self.rng.uniform(-1.5, 1.5),
-                       stratum=int(st), energy=off_e, z=float(z), face=int(fc),
-                       genome=None if child_g is None else child_g[k])
-        return int(eligible.size)
+        self._spawn_offspring(species, sp, eligible, litter, off_e)
+        return int(eligible.size) * litter
+
+    def _spawn_offspring(self, species: str, sp, parent_rows: np.ndarray,
+                         litter: int, off_e: float) -> None:
+        """Spawn `litter` young per parent (jittered to the parent's position),
+        each inheriting the parent's mutated genome (None for geneless species)."""
+        s = self._world.store
+        child_g = self._mutated_offspring_genomes(sp, parent_rows)
+        px = s.px[parent_rows].tolist()
+        py = s.py[parent_rows].tolist()
+        pz = s.pz[parent_rows].tolist()
+        strat = s.stratum[parent_rows].tolist()
+        face = s.face[parent_rows].tolist()
+        for k in range(len(px)):
+            for _ in range(litter):
+                self.spawn(species, px[k] + self.rng.uniform(-1.5, 1.5),
+                           py[k] + self.rng.uniform(-1.5, 1.5),
+                           stratum=int(strat[k]), energy=off_e, z=float(pz[k]),
+                           face=int(face[k]),
+                           genome=None if child_g is None else child_g[k])
 
     def _mutated_offspring_genomes(self, sp, parent_rows: np.ndarray):
         """Vectorized inheritance: each offspring gets its parent's genome with

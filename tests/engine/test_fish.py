@@ -26,7 +26,7 @@ def test_fish_installs_survives_and_stays_in_water():
     wm = w.terrain.water_mask
     ix = np.clip(w.store.px[rows].astype(int), 0, 63)
     iy = np.clip(w.store.py[rows].astype(int), 0, 63)
-    assert float((wm[ix, iy] > 0.5).mean()) > 0.6      # the shoal keeps to the water
+    assert float((wm[ix, iy] > 0.5).mean()) > 0.9      # the shoal keeps to the water
 
 
 def test_fish_and_shark_form_an_aquatic_food_chain():

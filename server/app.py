@@ -63,9 +63,10 @@ class AutoBody(BaseModel):
 
 def create_app(seed: int = 424242, world_size: int = 384, topology: str = "cube") -> FastAPI:
     sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
-    # cube world: six folded faces (a planet). 384/face is a big, roomy world;
-    # field_step_every=3 keeps it fast (weather/flora change slowly, so stepping
-    # them every 3rd tick is invisible but cuts the dominant cost ~3x).
+    # cube world: six folded faces (a big, roomy planet). Populations are kept
+    # readable/fast not by shrinking the world but by SLOW breeding + long
+    # lifespans in the plugins (low turnover = few spawn/death events per tick).
+    # field_step_every=6 keeps weather/flora cheap (they change slowly).
     cfg = WorldConfig(seed=seed, size=world_size, topology=topology,
                       field_step_every=6 if topology == "cube" else 1)
     runner = EngineRunner(cfg, plugin_sources=sources)

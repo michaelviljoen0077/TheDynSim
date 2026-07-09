@@ -12,13 +12,13 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "wolf", size=0.9, color="#8a4a4a", speed=1.05, swim_speed=0.6, lifespan=6000,
+        "wolf", size=0.9, color="#8a4a4a", speed=1.05, swim_speed=0.6, lifespan=22000,
         strata=(world.SURFACE,), props=("gestation", "heading"),
     )
     # spawn near the herds: on a large sparse world a randomly-placed wolf can
     # starve before ever finding prey
     grazers = world.entities("grazer")
-    for _ in range(10):
+    for _ in range(6):
         if grazers:
             k = int(world.rng.integers(0, len(grazers)))
             gx, gy, _gz = world.pos(grazers[k])
@@ -35,11 +35,14 @@ def on_tick(world):
     # predator population rides on prey abundance: ~1 wolf per 25 grazers.
     # counted once per tick (buffered spawns don't show up in count() mid-tick)
     pack_size = world.count("wolf")
-    pack_cap = max(2, world.count("grazer") // 25)
+    pack_cap = max(6, world.count("grazer") // 28)   # light ratio, but enough to sustain the pack
     wolves = world.entities("wolf")
     preys = world.nearest_many("wolf", "grazer", 22.0)  # one batched query for the pack
     for i, wolf in enumerate(wolves):
-        energy = world.get(wolf, "energy") - 0.15
+        # VERY low idle burn: one grazer meal (~48 energy) lasts the wolf ~3 days,
+        # a full belly ~3 weeks. Predators gorge then rest, so the pack hunts
+        # rarely and predation pressure on the herd is light.
+        energy = world.get(wolf, "energy") - 0.025
         x, y, _z = world.pos(wolf)
         f = world.face(wolf)
 
@@ -67,7 +70,7 @@ def on_tick(world):
         # grazer is right on top of it (hunger/opportunity wakes it). Mirrors the
         # grazer's sleep cycle, so both rest through the dark side of the planet.
         if world.daylight(wolf) < -0.15 and not prey_close:
-            world.set(wolf, "energy", min(energy + 0.12, 300.0))  # resting burns little
+            world.set(wolf, "energy", min(energy + 0.04, 350.0))  # resting burns little
             world.move(wolf, world.rng.uniform(-0.15, 0.15), world.rng.uniform(-0.15, 0.15))
             continue
 
@@ -91,15 +94,19 @@ def on_tick(world):
             world.set(wolf, "heading", hd)
             world.move(wolf, math.cos(hd), math.sin(hd))
 
-        world.set(wolf, "energy", min(energy, 300.0))
+        world.set(wolf, "energy", min(energy, 350.0))
 
         gestation = world.get(wolf, "gestation")
         if gestation > 0.0:
             world.set(wolf, "gestation", gestation - 1.0)
-            if gestation <= 1.0 and pack_size < pack_cap:
-                pack_size += 1
-                world.spawn("wolf", x + world.rng.uniform(-2, 2), y + world.rng.uniform(-2, 2),
-                            stratum=world.SURFACE, energy=90.0, face=world.face(wolf))
-        elif energy > 175.0 and pack_size < pack_cap:
-            world.set(wolf, "gestation", 60.0)
-            world.set(wolf, "energy", energy - 55.0)
+            if gestation <= 1.0:
+                for _ in range(2):   # a litter of pups (K-strategist: few, invested)
+                    if pack_size >= pack_cap:
+                        break
+                    pack_size += 1
+                    world.spawn("wolf", x + world.rng.uniform(-2, 2),
+                                y + world.rng.uniform(-2, 2),
+                                stratum=world.SURFACE, energy=120.0, face=world.face(wolf))
+        elif energy > 225.0 and pack_size < pack_cap:   # a fed wolf breeds
+            world.set(wolf, "gestation", 4800.0)        # ~8-day pregnancy
+            world.set(wolf, "energy", energy - 160.0)

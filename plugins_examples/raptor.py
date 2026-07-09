@@ -15,11 +15,11 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "raptor", size=0.6, color="#b58a5a", speed=1.1, lifespan=7000,
+        "raptor", size=0.6, color="#b58a5a", speed=1.1, lifespan=15000,
         strata=(world.SKY,), props=("gestation", "heading"),
     )
     birds = world.entities("bird")
-    for _ in range(8):
+    for _ in range(5):
         if birds:
             k = int(world.rng.integers(0, len(birds)))
             bx, by, _bz = world.pos(birds[k])
@@ -32,11 +32,11 @@ def setup(world):
 
 def on_tick(world):
     wing = world.count("raptor")
-    wing_cap = max(2, world.count("bird") // 40)   # predators ride on prey abundance
+    wing_cap = max(2, world.count("bird") // 55)   # a light predator:prey ratio
     raptors = world.entities("raptor")
     preys = world.nearest_many("raptor", "bird", 24.0)   # one batched query for the wing
     for i, raptor in enumerate(raptors):
-        energy = world.get(raptor, "energy") - 0.10
+        energy = world.get(raptor, "energy") - 0.02   # very low burn: a meal lasts days, hunts rarely
         x, y, z = world.pos(raptor)
         f = world.face(raptor)
         prey = preys[i]
@@ -44,7 +44,7 @@ def on_tick(world):
 
         # roost at local night unless a bird is right there (predators don't hunt 24/7)
         if world.daylight(raptor) < -0.15 and not prey_close:
-            world.set(raptor, "energy", min(energy + 0.08, 300.0))
+            world.set(raptor, "energy", min(energy + 0.04, 350.0))
             world.move(raptor, world.rng.uniform(-0.15, 0.15), world.rng.uniform(-0.15, 0.15))
             continue
 
@@ -65,15 +65,19 @@ def on_tick(world):
 
         # hold a soaring altitude in the sky band
         world.move(raptor, 0.0, 0.0, (5.0 - z) * 0.1)
-        world.set(raptor, "energy", min(energy, 300.0))
+        world.set(raptor, "energy", min(energy, 350.0))
 
         gestation = world.get(raptor, "gestation")
         if gestation > 0.0:
             world.set(raptor, "gestation", gestation - 1.0)
-            if gestation <= 1.0 and wing < wing_cap:
-                wing += 1
-                world.spawn("raptor", x + world.rng.uniform(-2, 2), y + world.rng.uniform(-2, 2),
-                            stratum=world.SKY, energy=90.0, z=z, face=f)
-        elif energy > 200.0 and wing < wing_cap:
-            world.set(raptor, "gestation", 80.0)
-            world.set(raptor, "energy", energy - 60.0)
+            if gestation <= 1.0:
+                for _ in range(2):   # a small clutch (K-strategist)
+                    if wing >= wing_cap:
+                        break
+                    wing += 1
+                    world.spawn("raptor", x + world.rng.uniform(-2, 2),
+                                y + world.rng.uniform(-2, 2),
+                                stratum=world.SKY, energy=120.0, z=z, face=f)
+        elif energy > 255.0 and wing < wing_cap:   # a well-fed raptor breeds
+            world.set(raptor, "gestation", 4800.0)  # ~8-day pregnancy
+            world.set(raptor, "energy", energy - 170.0)

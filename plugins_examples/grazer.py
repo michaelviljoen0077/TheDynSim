@@ -12,14 +12,14 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "grazer", size=0.7, color="#c9a35c", speed=0.9, lifespan=4500,
+        "grazer", size=0.7, color="#c9a35c", speed=0.9, lifespan=12000,
         strata=(world.SURFACE,), props=("gestation", "heading"),
         # heritable speed: fast grazers flee wolves better but the engine charges
         # a coupled energy cost, so speed evolves toward an equilibrium (natural
         # selection). Offspring inherit a mutated value (see the spawn below).
         genes={"speed": 1.0}, gene_sigma=0.05,
     )
-    for _ in range(140):
+    for _ in range(200):   # an established herd, so it survives the breeding lag
         x, y = world.random_surface_point()
         world.spawn("grazer", x, y, stratum=world.SURFACE,
                     energy=80.0 + 50.0 * world.rng.random())
@@ -35,7 +35,7 @@ def on_tick(world):
         # Hungrier upkeep so the herd is genuinely FOOD-limited at a healthy flora
         # level, and settles below the safety ceiling instead of overgrazing the
         # planet bare and pinning at the cap (soft equilibrium, not a hard wall).
-        energy = world.get(grazer, "energy") - 0.15
+        energy = world.get(grazer, "energy") - 0.05   # low idle burn: a fed grazer lasts days
         x, y, _z = world.pos(grazer)
         f = world.face(grazer)  # cube face (0 on flat/wrap): read the ground we're on
 
@@ -54,8 +54,8 @@ def on_tick(world):
         # graze: the engine credits this grazer at tick end from the cell's ACTUAL
         # flora (shared with any herdmates on the same cell) — energy-conserving,
         # so a crowded pasture feeds fewer, not everyone in full.
-        world.eat_flora(grazer, x, y, 0.03, gain=22.0, face=f)
-        world.set(grazer, "energy", min(energy, 200.0))
+        world.eat_flora(grazer, x, y, 0.03, gain=13.0, face=f)   # modest gain: surplus builds over days
+        world.set(grazer, "energy", min(energy, 260.0))
         # energy <= 0 is handled by the engine death sweep
 
         threat = threats[i] if wolves_exist else None
@@ -104,15 +104,18 @@ def on_tick(world):
         if gestation > 0.0:
             world.set(grazer, "gestation", gestation - 1.0)
             if gestation <= 1.0:
-                litter = 1 + int(world.rng.integers(0, 2))  # 1 or 2 young
+                litter = 2 + int(world.rng.integers(0, 3))  # 2-4 young (r-strategist prey)
                 for _ in range(litter):
                     world.spawn("grazer", x + world.rng.uniform(-2, 2),
                                 y + world.rng.uniform(-2, 2),
                                 stratum=world.SURFACE, energy=45.0, face=f,
                                 parent=grazer)  # inherit speed gene (mutated)
-        elif energy > 135.0 and world.get(grazer, "age") > 200:
+        elif energy > 200.0 and world.get(grazer, "age") > 400:
             # density-dependent conception: crowded or overgrazed ground means no
-            # pregnancy — the herd saturates against its resources
-            if world.flora_at(x, y, f) > 0.06 and len(world.within(grazer, 5.0, species="grazer")) < 4:
-                world.set(grazer, "gestation", 160.0)   # ~1.3 days of pregnancy
-                world.set(grazer, "energy", energy - 50.0)
+            # pregnancy. A grazer builds a surplus, then carries a LONG (~6-day)
+            # pregnancy — but delivers a big litter, so the r-strategist herd out-
+            # breeds predation. Mature young (age>400) so births aren't delayed too
+            # far past the founders.
+            if world.flora_at(x, y, f) > 0.06 and len(world.within(grazer, 5.0, species="grazer")) < 5:
+                world.set(grazer, "gestation", 3600.0)   # ~6-day pregnancy
+                world.set(grazer, "energy", energy - 140.0)

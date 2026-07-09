@@ -14,12 +14,12 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "shark", size=0.8, color="#c56b6b", speed=0.9, swim_speed=1.5, lifespan=6000,
+        "shark", size=0.8, color="#c56b6b", speed=0.9, swim_speed=1.5, lifespan=13000,
         strata=(world.SURFACE,), props=("gestation", "heading"),
     )
     # seed near the shoals so a founder shark isn't stranded in empty ocean
     fish = world.entities("fish")
-    for _ in range(12):
+    for _ in range(7):
         if fish:
             k = int(world.rng.integers(0, len(fish)))
             fx, fy, _fz = world.pos(fish[k])
@@ -31,11 +31,11 @@ def setup(world):
 
 def on_tick(world):
     pack = world.count("shark")
-    pack_cap = max(2, world.count("fish") // 30)   # predators ride on prey abundance
+    pack_cap = max(6, world.count("fish") // 28)   # light ratio, but enough to sustain
     sharks = world.entities("shark")
     preys = world.nearest_many("shark", "fish", 20.0)  # one batched query for the school
     for i, shark in enumerate(sharks):
-        energy = world.get(shark, "energy") - 0.12
+        energy = world.get(shark, "energy") - 0.025   # very low burn: a meal lasts days, hunts rarely
         x, y, _z = world.pos(shark)
         f = world.face(shark)
 
@@ -52,7 +52,7 @@ def on_tick(world):
 
         # night rest (unless a fish is right there) — predators don't hunt 24/7
         if world.daylight(shark) < -0.15 and not prey_close:
-            world.set(shark, "energy", min(energy + 0.1, 300.0))
+            world.set(shark, "energy", min(energy + 0.04, 350.0))
             world.move(shark, world.rng.uniform(-0.15, 0.15), world.rng.uniform(-0.15, 0.15))
             continue
 
@@ -74,15 +74,18 @@ def on_tick(world):
             world.set(shark, "heading", hd)
             world.move(shark, math.cos(hd), math.sin(hd))
 
-        world.set(shark, "energy", min(energy, 300.0))
+        world.set(shark, "energy", min(energy, 350.0))
 
         gestation = world.get(shark, "gestation")
         if gestation > 0.0:
             world.set(shark, "gestation", gestation - 1.0)
-            if gestation <= 1.0 and pack < pack_cap:
-                pack += 1
-                world.spawn("shark", x + world.rng.uniform(-2, 2), y + world.rng.uniform(-2, 2),
-                            energy=90.0, face=f)
-        elif energy > 190.0 and pack < pack_cap:
-            world.set(shark, "gestation", 70.0)
-            world.set(shark, "energy", energy - 60.0)
+            if gestation <= 1.0:
+                for _ in range(2):   # a small litter of pups (K-strategist)
+                    if pack >= pack_cap:
+                        break
+                    pack += 1
+                    world.spawn("shark", x + world.rng.uniform(-2, 2),
+                                y + world.rng.uniform(-2, 2), energy=120.0, face=f)
+        elif energy > 255.0 and pack < pack_cap:   # a well-fed shark breeds
+            world.set(shark, "gestation", 4800.0)  # ~8-day pregnancy
+            world.set(shark, "energy", energy - 170.0)

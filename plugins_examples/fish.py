@@ -15,19 +15,20 @@ PLUGIN_META = {
 
 def setup(world):
     world.register_species(
-        "fish", size=0.45, color="#4aa3c9", speed=0.8, swim_speed=1.2,
-        strata=(world.SURFACE,),
+        "fish", size=0.45, color="#4aa3c9", speed=0.8, swim_speed=1.2, lifespan=9000,
+        strata=(world.SURFACE,), props=("gestation",),
     )
-    for _ in range(120):
+    for _ in range(180):   # an established shoal, so it survives the incubation lag
         x, y = world.random_water_point()
         world.spawn("fish", x, y, energy=90.0)
 
 
 def on_tick(world):
-    # the whole shoal in three vectorized passes — no Python per-fish loop
-    world.metabolize("fish", 0.05)                                       # steady upkeep
-    world.graze("fish", rate=0.02, gain=32.0, max_energy=160.0, on="plankton")
-    # density-dependent breeding (crowd_max) — no hard cap; only fed fish (over
-    # plankton, i.e. in water) ever reach the energy bar, so breeding stays aquatic
-    world.breed("fish", energy_over=120.0, cost=50.0, offspring_energy=45.0,
-                crowd_max=5, crowd_radius=8.0)
+    # the whole shoal in four vectorized passes — no Python per-fish loop
+    world.metabolize("fish", 0.03)                                       # low idle burn
+    world.graze("fish", rate=0.02, gain=6.0, max_energy=210.0, on="plankton")
+    # r-strategist prey: a ~3-day incubation then a SPAWN of 6 fry (fish are
+    # fecund) so the shoal out-breeds shark predation. Only fed fish (over water
+    # plankton) reach the bar, so breeding stays aquatic; density-dependent.
+    world.breed("fish", energy_over=190.0, cost=150.0, offspring_energy=45.0,
+                crowd_max=4, crowd_radius=10.0, gestation=1800.0, litter=6)

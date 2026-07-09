@@ -28,7 +28,9 @@ def on_tick(world):
     # flora and starve where the land is barren, so a flock can't persist over a
     # dead planet. Breeding costs energy and is capped, so growth is a slow wave.
     world.metabolize("bird", 0.04)                                    # steady upkeep
-    world.graze("bird", rate=0.01, gain=45.0, max_energy=150.0)       # forage seeds below
+    # birds eat LITTLE — a light seed peck, so the flock's footprint on the shared
+    # flora is small (it barely competes with the grazing herd)
+    world.graze("bird", rate=0.006, gain=45.0, max_energy=150.0)
     world.wander("bird", speed=0.9, turn=0.15)                        # gentle drift
     # Density-dependent breeding (crowd_max) shapes the flock softly; the cap is an
     # ecological BACKSTOP, not the control. Birds share the grazers' flora, so a

@@ -10,6 +10,8 @@ from engine.plugin_host import PluginHost
 EX = Path(__file__).resolve().parents[2] / "plugins_examples"
 FISH = (EX / "fish.py").read_text()
 SHARK = (EX / "shark.py").read_text()
+BIRDS = (EX / "birds.py").read_text()
+RAPTOR = (EX / "raptor.py").read_text()
 
 
 def test_fish_installs_survives_and_stays_in_water():
@@ -38,3 +40,16 @@ def test_fish_and_shark_form_an_aquatic_food_chain():
         w.step()
     assert w.store.alive_indices(fid).size > 0          # prey persists
     assert w.store.alive_indices(sid).size > 0          # predator feeds itself on fish
+
+
+def test_birds_and_raptor_form_a_sky_food_chain():
+    w = World(WorldConfig(seed=5, size=64, topology="wrap", initial_capacity=8192))
+    host = PluginHost(w)
+    host.install(BIRDS)
+    host.install(RAPTOR)
+    bid = w.registry.by_name["bird"].id
+    rid = w.registry.by_name["raptor"].id
+    for _ in range(400):
+        w.step()
+    assert w.store.alive_indices(bid).size > 0          # flock persists under predation
+    assert w.store.alive_indices(rid).size > 0          # raptors feed on birds

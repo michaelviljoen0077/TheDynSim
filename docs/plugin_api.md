@@ -299,7 +299,9 @@ night-rest, starve, reproduce), `plugins_examples/birds.py` (batched-primitive s
 flock — metabolize/graze/wander/breed, no per-entity loop),
 `plugins_examples/fish.py` (aquatic grazer: swims in water, filter-feeds plankton,
 stays wet), `plugins_examples/shark.py` (aquatic predator: hunts fish, pack size
-rides on prey abundance). These are the canonical idioms — imitate their structure.
+rides on prey abundance), `plugins_examples/raptor.py` (sky predator: stoops on the
+bird flock via nearest_many+attack, so birds can run capless under predation).
+These are the canonical idioms — imitate their structure.
 
 ## What gets your candidate rejected
 

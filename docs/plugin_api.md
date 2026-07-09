@@ -132,20 +132,34 @@ species count — is what limits performance. So:
 - `world.entities(species) -> list[handle]` · `world.count(species) -> int`
 - `world.pos(handle) -> (x, y, z)` · `world.get(handle, prop) -> float` (props: declared slots, `"energy"`, `"age"`)
 - `world.nearest(handle, species=None, radius=10.0, stratum=None) -> handle | None` — searches
-  the caller's own stratum by default. Pass `stratum=world.SURFACE` (etc.) to **sense another
-  layer** — e.g. a burrower detecting surface prey. To *interact* (attack/eat) across layers you
-  must still `set_stratum` onto that layer first; sensing alone doesn't move you.
+  the caller's own stratum by default. Pass `stratum=world.SURFACE` (etc.) to **sense the other
+  layer** — e.g. a flyer spotting prey on the ground. To *interact* (attack) across layers it
+  must still `set_stratum` onto that layer first; sensing alone doesn't move you. Hidden
+  creatures are never returned.
 - `world.within(handle, radius, species=None, stratum=None) -> list[handle]` — same rules.
 
 ### Mutations (owned entities only)
 - `world.move(handle, dx, dy, dz=0.0)` — positions clamp to world bounds.
 - `world.set(handle, prop, value)` — props: declared slots or `"energy"`.
 - `world.set_stratum(handle, stratum)` — must be in the species' declared strata.
+- `world.hide(handle, hidden=True)` / `world.is_hidden(handle)` — **ability/state**:
+  a hidden (burrowed/camouflaged) creature is invisible to every other creature's
+  `nearest`/`within`. It can still sense the world. Use it to escape predators or
+  ambush prey. Make it cost something (a hidden creature usually can't forage).
 
 ### Interaction (any species)
 - `world.attack(handle, amount) -> float` — engine-mediated predation: drains up
   to `amount` energy from the target (applies at tick end, after the target's own
   writes). Returns the expected gain — credit it to your own entity via `set`.
+
+### Give EXISTING creatures new abilities — don't just add species
+Prefer *mutating a live plugin* (`PLUGIN_META['lineage_parent']`) to grant its
+species a new behaviour over inventing yet another species. Abilities you can
+express with the existing API: **hiding/burrowing** (`hide`), **camouflage**
+(hide when a predator nears), **ambush** (predator hides, then strikes when prey
+is adjacent), **nocturnality** (act on `daylight`), **fleeing/herding**
+(`direction_to`), **caching** (`world.store`). A richer web often comes from
+smarter existing species, not more of them.
 
 ### Environment
 - `world.flora_at(x, y) -> 0..1` · `world.eat_flora(x, y, amount) -> eaten` (immediate)
@@ -160,7 +174,9 @@ species count — is what limits performance. So:
 - `world.store` — plugin-scoped persistent key-value state (int/float/str,
   snapshot-included): `world.store.get(key, default)`, `world.store.set(key, value)`.
 - `world.size` — world edge length; positions span `0 .. world.size - 1`.
-- Strata constants: `world.UNDERGROUND` (0), `world.SURFACE` (1), `world.SKY` (2).
+- Strata constants: `world.SURFACE` (the ground) and `world.SKY` (the air). There
+  are only these two — there is no underground layer. A creature "goes to ground"
+  via `hide()`, not a separate stratum.
 
 ## Diet is emergent, not a declared type
 

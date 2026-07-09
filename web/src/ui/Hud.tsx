@@ -6,7 +6,6 @@ const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 const STRATA: { index: 0 | 1 | 2; label: string }[] = [
   { index: 1, label: 'Surface' },
   { index: 2, label: 'Sky' },
-  { index: 0, label: 'Underground (x-ray)' },
 ];
 const OVERLAYS: { value: 'none' | 'flora' | 'water'; label: string }[] = [
   { value: 'none', label: 'Terrain' },

@@ -20,6 +20,7 @@ OP_SET_ENERGY = 3
 OP_SET_PROP = 4
 OP_SET_STRATUM = 5
 OP_DRAIN_ENERGY = 6
+OP_SET_HIDDEN = 7
 
 
 @dataclass
@@ -47,6 +48,9 @@ class CommandBuffer:
 
     def set_stratum(self, handle: int, stratum: int) -> None:
         self.ops.append((OP_SET_STRATUM, handle, stratum))
+
+    def set_hidden(self, handle: int, value: bool) -> None:
+        self.ops.append((OP_SET_HIDDEN, handle, value))
 
     def drain_energy(self, handle: int, amount: float) -> None:
         """Predation drain: applied as a delta AFTER earlier ops (incl. the prey's
@@ -138,6 +142,8 @@ class CommandBuffer:
                 store.props[i, op[2]] = op[3]
             elif kind == OP_SET_STRATUM:
                 store.stratum[i] = op[2]
+            elif kind == OP_SET_HIDDEN:
+                store.hidden[i] = op[2]
             elif kind == OP_DRAIN_ENERGY:
                 e = float(store.energy[i])
                 store.energy[i] = e - min(e, op[2])

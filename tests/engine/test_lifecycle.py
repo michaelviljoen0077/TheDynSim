@@ -97,3 +97,29 @@ def test_live_species_name_still_protected():
     host.install(MORTAL % 100000)  # long-lived: stays alive
     with pytest.raises(PluginInstallError):
         host.install(MORTAL % 100000)  # same name, still alive -> duplicate
+
+
+def test_hide_makes_entity_unfindable():
+    """A hidden entity is excluded from other creatures' nearest/within, but can
+    still be a query origin — the burrow/hide ability."""
+    from engine.world_api import WorldAPI
+    w = World(WorldConfig(seed=1, size=64, initial_capacity=256))
+    sp = w.registry.register("mouse")
+    api = WorldAPI(w, "mice", 0, ["mouse"])
+    a = w.store.spawn(sp.id, 20.0, 20.0, 0.0, SURFACE, 100.0)
+    b = w.store.spawn(sp.id, 21.0, 20.0, 0.0, SURFACE, 100.0)
+    w.spatial.rebuild(w.store)
+    assert api.nearest(a, species="mouse", radius=5.0) == b
+    # hide b (buffered), apply + rebuild, then it's unfindable
+    api.hide(b)
+    w.commands.apply(w.store, float(w.config.size))
+    w.spatial.rebuild(w.store)
+    assert api.is_hidden(b)
+    assert api.nearest(a, species="mouse", radius=5.0) is None
+    # a hidden entity can still sense others (query origin still works)
+    assert api.nearest(b, species="mouse", radius=5.0) == a
+    # resurface
+    api.hide(b, False)
+    w.commands.apply(w.store, float(w.config.size))
+    w.spatial.rebuild(w.store)
+    assert api.nearest(a, species="mouse", radius=5.0) == b

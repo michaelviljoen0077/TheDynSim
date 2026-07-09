@@ -143,7 +143,7 @@ class SpeciesRegistry:
 class EntityStore:
     ARRAY_FIELDS = (
         "alive", "generation", "species_id", "plugin_id",
-        "px", "py", "pz", "stratum", "face", "energy", "age", "props",
+        "px", "py", "pz", "stratum", "face", "hidden", "energy", "age", "props",
     )
 
     def __init__(self, capacity: int, max_prop_slots: int) -> None:
@@ -158,6 +158,7 @@ class EntityStore:
         self.pz = np.zeros(capacity, dtype=np.float32)
         self.stratum = np.full(capacity, SURFACE, dtype=np.uint8)
         self.face = np.zeros(capacity, dtype=np.uint8)   # cube face (0 for flat/wrap)
+        self.hidden = np.zeros(capacity, dtype=bool)      # burrowed/hidden: unseen by queries
         self.energy = np.zeros(capacity, dtype=np.float32)
         self.age = np.zeros(capacity, dtype=np.uint32)
         self.props = np.zeros((capacity, max_prop_slots), dtype=np.float32)
@@ -199,6 +200,7 @@ class EntityStore:
         self.px[i], self.py[i], self.pz[i] = x, y, z
         self.stratum[i] = stratum
         self.face[i] = face
+        self.hidden[i] = False
         self.energy[i] = energy
         self.age[i] = 0
         self.props[i, :] = 0.0

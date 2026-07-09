@@ -51,7 +51,7 @@ class SpatialHash:
         self.xs = store.px.tolist()
         self.ys = store.py.tolist()
         buckets: dict[tuple[int, int, int], dict[tuple[int, int], list[int]]] = {}
-        idx = np.flatnonzero(store.alive)
+        idx = np.flatnonzero(store.alive & ~store.hidden)  # hidden entities are unseen
         if idx.size:
             inv = 1.0 / self.cell
             cx = (store.px[idx] * inv).astype(np.int32).tolist()

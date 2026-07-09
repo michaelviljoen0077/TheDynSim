@@ -37,13 +37,18 @@ class Spatial3D:
         posarr = np.full((store.capacity, 3), np.inf, dtype=np.float64)
         if idx.size:
             pos = positions_3d(store.face[idx], store.px[idx], store.py[idx], self.size)
-            posarr[idx] = pos
+            posarr[idx] = pos     # every alive entity is a valid query ORIGIN...
             cells = np.floor(pos / self.cell).astype(np.int64)
             strata = store.stratum[idx].tolist()
             species = store.species_id[idx].tolist()
+            hidden = store.hidden[idx].tolist()
             rows = idx.tolist()
             cl = cells.tolist()
-            for i, st, sp, c in zip(rows, strata, species, cl, strict=True):
+            for i, st, sp, hid, c in zip(rows, strata, species, hidden, cl, strict=True):
+                # ...but a hidden/burrowed entity is NOT put in the buckets, so no
+                # other creature's nearest/within can find it (it can still query).
+                if hid:
+                    continue
                 layer = buckets.setdefault((st, sp), {})
                 layer.setdefault((c[0], c[1], c[2]), []).append(i)
         self.buckets = buckets

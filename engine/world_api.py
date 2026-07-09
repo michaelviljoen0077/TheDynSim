@@ -52,7 +52,9 @@ class PluginStore:
 
 
 class WorldAPI:
-    UNDERGROUND = UNDERGROUND
+    # Two strata only: the ground and the air. (An underground layer used to exist
+    # but was removed — it was hard to see and the governor fixated on it; a
+    # creature "goes to ground" now via hide()/burrow as a STATE, not a layer.)
     SURFACE = SURFACE
     SKY = SKY
 
@@ -123,6 +125,12 @@ class WorldAPI:
             raise CapabilityViolation(
                 "undeclared-species",
                 f"species {name!r} not in PLUGIN_META['species'] {sorted(self._declared)}",
+            )
+        if UNDERGROUND in tuple(strata):
+            raise CapabilityViolation(
+                "no-underground",
+                "the underground stratum was removed; use SURFACE and/or SKY. To make a "
+                "creature go to ground for safety, give it hide()/burrow behaviour instead.",
             )
         if name in self._world.registry.by_name:
             existing = self._world.registry.by_name[name]
@@ -299,6 +307,18 @@ class WorldAPI:
                 "stratum-not-allowed", f"{sp.name!r} may only occupy strata {sp.strata}"
             )
         self._world.commands.set_stratum(handle, int(stratum))
+
+    def hide(self, handle: int, hidden: bool = True) -> None:
+        """Burrow / hide (or resurface). A hidden creature is invisible to every
+        other creature's nearest()/within() next tick — a way to escape predators
+        or ambush prey WITHOUT a separate underground layer. It can still sense the
+        world itself. Design trade-off is yours: e.g. don't forage while hidden, or
+        drain a little energy, so hiding costs something."""
+        self._owned_row(handle)
+        self._world.commands.set_hidden(handle, bool(hidden))
+
+    def is_hidden(self, handle: int) -> bool:
+        return bool(self._world.store.hidden[self._row(handle)])
 
     def attack(self, handle: int, amount: float) -> float:
         """Engine-mediated predation: drain up to `amount` energy from any entity.

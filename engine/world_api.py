@@ -279,6 +279,30 @@ class WorldAPI:
             )
         return [(j << GEN_BITS) | int(s.generation[j]) for j in rows]
 
+    def nearest_many(self, species: str, target_species: str,
+                     radius: float = 10.0) -> list[int | None]:
+        """BATCHED nearest — one vectorized query for a whole species. Returns a
+        list aligned with `world.entities(species)`: each entry is that entity's
+        nearest `target_species` handle within `radius` (same stratum), or None.
+        Identical results to calling nearest() per entity, but far faster — drop
+        your per-entity nearest() call and index this instead. (Cube uses the 3D
+        index; flat/wrap falls back to per-entity, so alignment holds everywhere.)"""
+        sp = self._species(species)
+        tsp = self._species(target_species)
+        s = self._world.store
+        rows = s.alive_indices(sp.id)
+        if self._world.geom is not None:
+            res = self._world.spatial3d.nearest_many(s, rows, float(radius), tsp.id)
+            gen = s.generation
+            return [None if j < 0 else (int(j) << GEN_BITS) | int(gen[j]) for j in res.tolist()]
+        out: list[int | None] = []
+        for r in rows.tolist():
+            j = self._world.spatial.nearest(
+                s, float(s.px[r]), float(s.py[r]), float(radius),
+                int(s.stratum[r]), species_id=tsp.id, exclude_row=r, face=int(s.face[r]))
+            out.append(None if j < 0 else (int(j) << GEN_BITS) | int(s.generation[j]))
+        return out
+
     def direction_to(self, handle: int, target: int) -> tuple[float, float]:
         """Unit (dx, dy) in the CALLER's local frame that heads toward `target`,
         correct across face seams on the cube (project the 3D direction onto the

@@ -161,6 +161,11 @@ species count — is what limits performance. So:
   must still `set_stratum` onto that layer first; sensing alone doesn't move you. Hidden
   creatures are never returned.
 - `world.within(handle, radius, species=None, stratum=None) -> list[handle]` — same rules.
+- `world.nearest_many(species, target_species, radius=10.0) -> list[handle | None]` — BATCHED
+  nearest for a WHOLE species in one vectorized pass: the returned list is aligned with
+  `world.entities(species)`, entry `i` being that entity's nearest `target_species` (same
+  stratum) or None. Identical results to per-entity `nearest`, ~3x faster at scale. Prefer it
+  for hunting/fleeing: query once before the loop, then index it (see predator.py/grazer.py).
 
 ### Mutations (owned entities only)
 - `world.move(handle, dx, dy, dz=0.0)` — positions clamp to world bounds.

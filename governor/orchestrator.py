@@ -485,7 +485,9 @@ PERFORMANCE: when a species' members all behave alike, drive the whole herd with
 the BATCHED primitives (world.metabolize/graze/wander/breed) instead of a Python
 loop over world.entities — it is 2-3x faster and lets populations grow large. Use
 a per-entity loop only for genuinely conditional behaviour (fleeing, water
-avoidance), and still do the uniform parts in batch.
+avoidance), and still do the uniform parts in batch. Even inside a per-entity
+loop, replace per-entity world.nearest() with ONE world.nearest_many(species,
+target, radius) call before the loop and index it — same result, ~3x faster.
 
 EVOLUTION: to let a species ADAPT on its own, declare genes={...} and have
 offspring inherit them (parent= on spawn, or world.breed). The report shows mean

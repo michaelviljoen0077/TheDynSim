@@ -131,6 +131,42 @@ class Spatial3D:
         # tie-break to the lowest row id (deterministic)
         return int(rows[d2 == dmin].min())
 
+    def nearest_many(self, store: EntityStore, query_rows: np.ndarray, radius: float,
+                     target_species_id: int) -> np.ndarray:
+        """Vectorized nearest: for each query row, the nearest entity of
+        `target_species_id` within `radius` in the SAME stratum (matches nearest()),
+        or -1. One batched pass replaces N per-entity spatial queries. Uses the
+        same direct-difference distance as nearest() so results are identical
+        (deterministic lowest-row tie-break via sorted targets + argmin)."""
+        query_rows = np.asarray(query_rows, dtype=np.int64)
+        out = np.full(query_rows.size, -1, dtype=np.int64)
+        if query_rows.size == 0:
+            return out
+        r2 = float(radius) * float(radius)
+        q_strata = store.stratum[query_rows]
+        for st in np.unique(q_strata).tolist():
+            layer = self.buckets.get((int(st), int(target_species_id)))
+            if not layer:
+                continue
+            targets = sorted({j for rows in layer.values() for j in rows})
+            if not targets:
+                continue
+            targets = np.array(targets, dtype=np.int64)
+            qmask = q_strata == st
+            qrows = query_rows[qmask]
+            qpos = self._posarr[qrows]              # (N,3)
+            tpos = self._posarr[targets]            # (K,3)
+            diff = qpos[:, None, :] - tpos[None, :, :]
+            d2 = np.einsum("nkc,nkc->nk", diff, diff)
+            d2[qrows[:, None] == targets[None, :]] = np.inf   # exclude self
+            d2[d2 > r2] = np.inf
+            nidx = np.argmin(d2, axis=1)            # sorted targets -> lowest-row tie-break
+            found = np.isfinite(d2[np.arange(qrows.size), nidx])
+            res = np.full(qrows.size, -1, dtype=np.int64)
+            res[found] = targets[nidx[found]]
+            out[qmask] = res
+        return out
+
     def distance(self, row_a: int, row_b: int) -> float:
         a = self.pos_of(row_a)
         b = self.pos_of(row_b)

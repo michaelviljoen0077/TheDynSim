@@ -36,7 +36,9 @@ def on_tick(world):
     # counted once per tick (buffered spawns don't show up in count() mid-tick)
     pack_size = world.count("wolf")
     pack_cap = max(2, world.count("grazer") // 25)
-    for wolf in world.entities("wolf"):
+    wolves = world.entities("wolf")
+    preys = world.nearest_many("wolf", "grazer", 22.0)  # one batched query for the pack
+    for i, wolf in enumerate(wolves):
         energy = world.get(wolf, "energy") - 0.15
         x, y, _z = world.pos(wolf)
         f = world.face(wolf)
@@ -57,7 +59,7 @@ def on_tick(world):
         # 3D global queries find prey across face seams, so a modest scent radius
         # suffices; direction_to steers correctly even when the prey is on another
         # face, and distance() is the true 3D range.
-        prey = world.nearest(wolf, species="grazer", radius=22.0)
+        prey = preys[i]
         prey_close = prey is not None and world.distance(wolf, prey) < 6.0
 
         # NIGHT REST: predators don't hunt around the clock. A wolf beds down at its

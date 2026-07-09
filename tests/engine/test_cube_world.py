@@ -15,6 +15,31 @@ def cube_world(seed=1, size=48):
     return World(WorldConfig(seed=seed, size=size, topology="cube", initial_capacity=2048))
 
 
+def test_nearest_many_matches_per_entity_nearest():
+    """The batched nearest returns, for every entity, exactly what per-entity
+    nearest() would — same result, one vectorized pass."""
+    w = cube_world(size=48)
+    pred = WorldAPI(w, "p", 0, ["hunter"])
+    pred.register_species("hunter")
+    prey = WorldAPI(w, "q", 1, ["mark"])
+    prey.register_species("mark")
+    hid = w.registry.by_name["hunter"].id
+    mid = w.registry.by_name["mark"].id
+    rng = np.random.default_rng(0)
+    for _ in range(30):
+        w.store.spawn(hid, float(rng.uniform(0, 48)), float(rng.uniform(0, 48)),
+                      0.0, SURFACE, 100.0, face=int(rng.integers(0, 6)))
+    for _ in range(60):
+        w.store.spawn(mid, float(rng.uniform(0, 48)), float(rng.uniform(0, 48)),
+                      0.0, SURFACE, 100.0, face=int(rng.integers(0, 6)))
+    w.spatial3d.rebuild(w.store)
+    batched = pred.nearest_many("hunter", "mark", radius=18.0)
+    ents = pred.entities("hunter")
+    assert len(batched) == len(ents)
+    for i, h in enumerate(ents):
+        assert batched[i] == pred.nearest(h, species="mark", radius=18.0)
+
+
 def test_heading_prop_is_reprojected_across_a_seam():
     """A roaming creature's 'heading' prop stays continuous when it folds onto a
     neighbour face — it keeps its WORLD direction instead of a scrambled local

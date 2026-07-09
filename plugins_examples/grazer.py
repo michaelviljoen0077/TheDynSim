@@ -27,7 +27,11 @@ def setup(world):
 
 def on_tick(world):
     wolves_exist = world.count("wolf") > 0
-    for grazer in world.entities("grazer"):
+    grazers = world.entities("grazer")
+    # batched neighbour queries for the whole herd (one vectorized pass each)
+    threats = world.nearest_many("grazer", "wolf", 9.0) if wolves_exist else None
+    neighbours = world.nearest_many("grazer", "grazer", 6.0)
+    for i, grazer in enumerate(grazers):
         # Hungrier upkeep so the herd is genuinely FOOD-limited at a healthy flora
         # level, and settles below the safety ceiling instead of overgrazing the
         # planet bare and pinning at the cap (soft equilibrium, not a hard wall).
@@ -54,7 +58,7 @@ def on_tick(world):
         world.set(grazer, "energy", min(energy, 200.0))
         # energy <= 0 is handled by the engine death sweep
 
-        threat = world.nearest(grazer, species="wolf", radius=9.0) if wolves_exist else None
+        threat = threats[i] if wolves_exist else None
         if threat is not None:
             dx, dy = world.direction_to(grazer, threat)  # seam-aware; flee = away
             world.move(grazer, -dx + world.rng.uniform(-0.2, 0.2),
@@ -67,7 +71,7 @@ def on_tick(world):
             world.move(grazer, world.rng.uniform(-0.2, 0.2), world.rng.uniform(-0.2, 0.2))
             continue
 
-        neighbour = world.nearest(grazer, species="grazer", radius=6.0)
+        neighbour = neighbours[i]
         if neighbour is not None:
             dx, dy = world.direction_to(grazer, neighbour)  # disperse from crowd
             world.move(grazer, -dx * 0.6 + world.rng.uniform(-0.5, 0.5),

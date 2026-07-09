@@ -32,7 +32,9 @@ def setup(world):
 def on_tick(world):
     pack = world.count("shark")
     pack_cap = max(2, world.count("fish") // 30)   # predators ride on prey abundance
-    for shark in world.entities("shark"):
+    sharks = world.entities("shark")
+    preys = world.nearest_many("shark", "fish", 20.0)  # one batched query for the school
+    for i, shark in enumerate(sharks):
         energy = world.get(shark, "energy") - 0.12
         x, y, _z = world.pos(shark)
         f = world.face(shark)
@@ -45,7 +47,7 @@ def on_tick(world):
             world.move(shark, math.cos(hd) * 1.5, math.sin(hd) * 1.5)
             continue
 
-        prey = world.nearest(shark, species="fish", radius=20.0)
+        prey = preys[i]
         prey_close = prey is not None and world.distance(shark, prey) < 6.0
 
         # night rest (unless a fish is right there) — predators don't hunt 24/7

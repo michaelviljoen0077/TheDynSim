@@ -25,6 +25,14 @@ function postSpeed(tps: number): void {
   }).catch(() => undefined);
 }
 
+function god(path: 'spawn' | 'cull' | 'flora', body: object): void {
+  void fetch(`/api/god/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(() => undefined);
+}
+
 function clockText(dayFrac: number): string {
   const mins = Math.floor(((dayFrac % 1) + 1) % 1 * 24 * 60);
   const hh = String(Math.floor(mins / 60)).padStart(2, '0');
@@ -50,6 +58,9 @@ export function Hud() {
 
   const [tps, setTps] = useState(20);
   const speedTimer = useRef<number | undefined>(undefined);
+  const [godSpecies, setGodSpecies] = useState('');
+  const [spawnCount, setSpawnCount] = useState(20);
+  const activeGodSpecies = godSpecies || species[0]?.name || '';
 
   useEffect(() => {
     void fetch('/api/state')
@@ -210,6 +221,69 @@ export function Hud() {
               Globe (spherify)
             </label>
           )}
+        </div>
+      </div>
+
+      <div className="panel panel-god">
+        <div className="panel-title">⚡ GOD MODE</div>
+        <div className="god-row">
+          <select
+            className="god-select"
+            value={activeGodSpecies}
+            onChange={(e) => setGodSpecies(e.target.value)}
+            disabled={species.length === 0}
+            title="Species to spawn or cull"
+          >
+            {species.length === 0 && <option>no species</option>}
+            {species.map((sp) => (
+              <option key={sp.id} value={sp.name}>
+                {sp.name}
+              </option>
+            ))}
+          </select>
+          <input
+            className="god-count"
+            type="number"
+            min={1}
+            max={2000}
+            value={spawnCount}
+            onChange={(e) => setSpawnCount(Math.max(1, Math.min(2000, Number(e.target.value))))}
+            title="How many to spawn"
+          />
+        </div>
+        <div className="button-row">
+          <button
+            disabled={activeGodSpecies === ''}
+            onClick={() => god('spawn', { species: activeGodSpecies, count: spawnCount })}
+            title={`Spawn ${spawnCount} ${activeGodSpecies} across the world`}
+          >
+            Spawn
+          </button>
+          <button
+            className="danger"
+            disabled={activeGodSpecies === ''}
+            onClick={() => god('cull', { species: activeGodSpecies })}
+            title={`Wipe out every ${activeGodSpecies}`}
+          >
+            Cull
+          </button>
+        </div>
+        <div className="god-row god-flora-row">
+          <span className="k">flora</span>
+          <button
+            className="overlay-btn"
+            onClick={() => god('flora', { mode: 'bloom', amount: 0.4 })}
+            title="Green the whole world (transient — dynamics settle it back)"
+          >
+            🌱 Bloom
+          </button>
+          <button
+            className="overlay-btn danger"
+            onClick={() => god('flora', { mode: 'scorch', amount: 0.9 })}
+            title="Scorch all vegetation (grows back over time)"
+          >
+            🔥 Scorch
+          </button>
         </div>
       </div>
     </div>

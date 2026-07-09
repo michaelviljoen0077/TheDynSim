@@ -41,6 +41,24 @@ class InstallBody(BaseModel):
     source: str
 
 
+class SpawnBody(BaseModel):
+    species: str
+    count: int = 20
+
+
+class CullBody(BaseModel):
+    species: str
+
+
+class FloraBody(BaseModel):
+    mode: str          # "bloom" | "scorch"
+    amount: float = 0.5
+
+
+class AutoBody(BaseModel):
+    enabled: bool
+
+
 def create_app(seed: int = 424242, world_size: int = 384, topology: str = "cube") -> FastAPI:
     sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
     # cube world: six folded faces (a planet). 384/face is a big, roomy world;
@@ -60,7 +78,8 @@ def create_app(seed: int = 424242, world_size: int = 384, topology: str = "cube"
             while True:
                 await asyncio.sleep(5.0)
                 orch = getattr(app_.state, "orchestrator", None)
-                if orch is not None and runner.running and orch.due():
+                if (orch is not None and orch.auto_evolve
+                        and runner.running and orch.due()):
                     log.info("cadence: triggering evolution cycle at tick %d",
                              runner.world.tick)
                     orch.run_cycle_async()
@@ -128,6 +147,36 @@ def create_app(seed: int = 424242, world_size: int = 384, topology: str = "cube"
         runner.set_tps(body.tps)
         return runner.state()
 
+    # -- god mode (operator interventions) ------------------------------------
+
+    def _log_intervention(kind: str, details: dict) -> None:
+        orch = getattr(app.state, "orchestrator", None)
+        if orch is not None:
+            with contextlib.suppress(Exception):
+                orch.notebook.record_intervention(
+                    runner.world.epoch, runner.world.tick, kind, details=details)
+
+    @app.post("/api/god/spawn")
+    def god_spawn(body: SpawnBody) -> dict:
+        result = runner.god_spawn(body.species, body.count)
+        if "error" not in result:
+            _log_intervention("god_spawn", result)
+        return result
+
+    @app.post("/api/god/cull")
+    def god_cull(body: CullBody) -> dict:
+        result = runner.god_cull(body.species)
+        if "error" not in result:
+            _log_intervention("god_cull", result)
+        return result
+
+    @app.post("/api/god/flora")
+    def god_flora(body: FloraBody) -> dict:
+        result = runner.god_flora(body.mode, body.amount)
+        if "error" not in result:
+            _log_intervention("god_flora", result)
+        return result
+
     # -- plugins & rollback (Story 2.4) ---------------------------------------
 
     @app.get("/api/plugins")
@@ -163,8 +212,17 @@ def create_app(seed: int = 424242, world_size: int = 384, topology: str = "cube"
     def governor_status() -> dict:
         orch = getattr(app.state, "orchestrator", None)
         if orch is None:
-            return {"configured": False}
-        return {"configured": True, "provider": orch.provider.name, **orch.status.__dict__}
+            return {"configured": False, "autoEvolve": False}
+        return {"configured": True, "provider": orch.provider.name,
+                "autoEvolve": orch.auto_evolve, **orch.status.__dict__}
+
+    @app.post("/api/governor/auto")
+    def governor_auto(body: AutoBody) -> dict:
+        orch = getattr(app.state, "orchestrator", None)
+        if orch is None:
+            return {"configured": False, "autoEvolve": False}
+        orch.auto_evolve = bool(body.enabled)
+        return {"configured": True, "autoEvolve": orch.auto_evolve}
 
     @app.get("/api/cycles")
     def get_cycles() -> list[dict]:

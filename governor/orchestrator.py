@@ -34,8 +34,9 @@ API_REFERENCE_PATH = Path(__file__).resolve().parent.parent / "docs" / "plugin_a
 STRATEGIES = [
     {"name": "fill an empty niche",
      "directive": "Introduce a NEW species that occupies a stratum or trophic role "
-                  "currently unused or thinly populated (e.g. an underground burrower, "
-                  "a sky forager, an aquatic swimmer with swim_speed>0, a decomposer)."},
+                  "currently unused or thinly populated (e.g. a sky forager, an aquatic "
+                  "swimmer with swim_speed>0, a decomposer, or a prey that hides/burrows "
+                  "via hide() to evade predators)."},
     {"name": "refine a live plugin",
      "directive": "Pick the WEAKEST existing plugin from the report and improve it via a "
                   "lineage mutation: set PLUGIN_META['lineage_parent'] to its name, declare "
@@ -98,6 +99,9 @@ class Orchestrator:
         self.snapshot_dir = Path(snapshot_dir)
         self.status = CycleStatus()
         self._busy = threading.Lock()
+        # auto-evolve: when False the automatic cadence is suspended (manual
+        # "EVOLVE NOW" still works). The operator's on/off switch (god mode).
+        self.auto_evolve = True
         self._last_promotion: dict | None = None   # {cycle_id, plugin_name, expected, report}
         # cadence anchor: first automatic cycle waits a full interval from startup
         self.last_cycle_end_tick: int = runner.world.tick if runner is not None else 0

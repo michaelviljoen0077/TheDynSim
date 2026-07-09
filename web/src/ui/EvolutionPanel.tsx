@@ -21,6 +21,7 @@ export interface GovernorStatus {
   stage: GovernorStage;
   cycle_id: string;
   detail: string;
+  autoEvolve: boolean;
 }
 
 export type CycleDecision = 'in_progress' | 'promoted' | 'no_change';
@@ -189,6 +190,16 @@ export function EvolutionPanel() {
       .finally(() => setEvolving(false));
   };
 
+  const toggleAuto = (enabled: boolean) => {
+    // optimistic: reflect immediately, the 3s poll reconciles
+    setStatus((s) => (s ? { ...s, autoEvolve: enabled } : s));
+    void fetchJson<{ autoEvolve: boolean }>('/api/governor/auto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }).catch(() => undefined);
+  };
+
   const flashRollback = (msg: string) => {
     setRollbackMsg(msg);
     window.clearTimeout(rollbackTimer.current);
@@ -249,6 +260,17 @@ export function EvolutionPanel() {
             >
               EVOLVE NOW
             </button>
+            <label
+              className="evo-auto-toggle"
+              title="When on, the governor evolves the world automatically on its cadence. Turn off to freeze evolution (EVOLVE NOW still works)."
+            >
+              <input
+                type="checkbox"
+                checked={status?.autoEvolve ?? false}
+                onChange={(e) => toggleAuto(e.target.checked)}
+              />
+              auto-evolve
+            </label>
             <span className="evo-stage-detail">{status?.detail ?? ''}</span>
           </div>
         )}

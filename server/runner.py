@@ -11,6 +11,8 @@ import threading
 import time
 from pathlib import Path
 
+import numpy as np
+
 from engine import World, WorldConfig, load_snapshot
 from engine.plugin_host import PluginHost
 from engine.snapshot import capture, write_capture
@@ -32,6 +34,9 @@ class EngineRunner:
         self._stop = threading.Event()
         self._step_once = threading.Event()
         self._thread: threading.Thread | None = None
+        # god-mode acts draw from their OWN rng so a divine intervention never
+        # perturbs the sim's deterministic rng stream (weather/flora/sweeps)
+        self._god_rng = np.random.default_rng(0xC0FFEE)
 
     def _make_world(self) -> World:
         world = World(self.config)
@@ -98,6 +103,74 @@ class EngineRunner:
             self.world = self._make_world()
             # a fresh run must not roll back into the discarded one
             self.last_promotion_snapshot = None
+
+    # -- god mode (direct divine interventions) -------------------------------
+    # These mutate the world directly under the lock (like reset/rollback), at a
+    # tick boundary — NOT through the plugin command buffer — so they bypass
+    # per-plugin quotas and capability checks. They are the operator's hand, not
+    # a plugin. Each returns a small result dict for the API to echo.
+
+    def _random_land_point(self, face: int) -> tuple[float, float]:
+        land = (self.world.terrain.land_points(face) if self.world.geom is not None
+                else self.world.terrain.land_points)
+        gx, gy = land[int(self._god_rng.integers(0, len(land)))]
+        size = self.world.config.size
+        return (min(float(gx) + float(self._god_rng.uniform(0, 1)), size - 1e-3),
+                min(float(gy) + float(self._god_rng.uniform(0, 1)), size - 1e-3))
+
+    def god_spawn(self, species: str, count: int) -> dict:
+        """Drop `count` members of a live species onto random land, scattered
+        across every face. Attributed to the owning plugin so its on_tick drives
+        them; caps are ignored (this is god mode)."""
+        with self.lock:
+            sp = self.world.registry.by_name.get(species)
+            if sp is None:
+                return {"error": f"unknown species {species!r}"}
+            rec = self.host.plugins.get(sp.plugin)
+            plugin_id = rec.plugin_id if rec is not None else -1
+            stratum = int(sp.strata[0])
+            store = self.world.store
+            nfaces = 6 if self.world.geom is not None else 1
+            n = max(1, min(int(count), 2000))
+            spawned = 0
+            for _ in range(n):
+                face = int(self._god_rng.integers(0, nfaces))
+                if (self.world.terrain.land_points(face) if self.world.geom is not None
+                        else self.world.terrain.land_points):
+                    x, y = self._random_land_point(face)
+                    store.spawn(sp.id, x, y, 0.0, stratum, 100.0, plugin_id, face)
+                    spawned += 1
+        return {"spawned": spawned, "species": species}
+
+    def god_cull(self, species: str) -> dict:
+        """Smite an entire species: remove every living member. If nothing
+        respawns it, the species goes extinct and its plugin is reaped."""
+        with self.lock:
+            sp = self.world.registry.by_name.get(species)
+            if sp is None:
+                return {"error": f"unknown species {species!r}"}
+            store = self.world.store
+            rows = store.alive_indices(sp.id)
+            for h in store.handles_of(rows):
+                store.remove(h)
+            removed = int(rows.size)
+        return {"culled": removed, "species": species}
+
+    def god_flora(self, mode: str, amount: float = 0.5) -> dict:
+        """Bloom (raise flora everywhere on land) or scorch (knock it down).
+        Both are transient — the flora field's growth/regrowth dynamics pull it
+        back toward equilibrium over the following ticks."""
+        amount = max(0.0, min(float(amount), 1.0))
+        with self.lock:
+            d = self.world.flora.density
+            water = self.world.terrain.water_mask
+            if mode == "bloom":
+                d[:] = np.clip(d + amount, 0.0, 1.0) * (1.0 - water)
+            elif mode == "scorch":
+                d[:] = d * (1.0 - amount)
+            else:
+                return {"error": f"unknown flora mode {mode!r}"}
+        return {"mode": mode, "amount": amount}
 
     # -- promotion & rollback (Story 2.4) --------------------------------------
 

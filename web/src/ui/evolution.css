@@ -115,6 +115,21 @@
   font-size: 11px;
   min-height: 14px;
 }
+.evo-auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #ffd27a;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+}
+.evo-auto-toggle input {
+  accent-color: #ffb454;
+  margin: 0;
+}
 .evo-offline {
   color: #ff8a7a;
   font-size: 11px;

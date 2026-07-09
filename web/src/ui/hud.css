@@ -246,6 +246,53 @@
   background: #4be1ff;
   border-color: #4be1ff;
 }
+.overlay-btn.danger {
+  border-color: rgba(255, 100, 90, 0.35);
+  color: #ff8a7a;
+}
+.overlay-btn.danger:hover {
+  color: #ffb0a4;
+}
+
+/* god mode: amber accent so divine controls read as "operator's hand" */
+.panel-god .panel-title {
+  color: #ffb454;
+}
+.god-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.god-select {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 180, 84, 0.08);
+  border: 1px solid rgba(255, 180, 84, 0.35);
+  color: #ffce8a;
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.god-count {
+  width: 58px;
+  background: rgba(255, 180, 84, 0.08);
+  border: 1px solid rgba(255, 180, 84, 0.35);
+  color: #ffce8a;
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 3px;
+}
+.god-flora-row {
+  gap: 6px;
+  margin-bottom: 0;
+}
+.god-flora-row .k {
+  min-width: 34px;
+}
 
 .world-waiting {
   height: 100%;

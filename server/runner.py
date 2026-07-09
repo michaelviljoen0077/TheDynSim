@@ -199,11 +199,25 @@ class EngineRunner:
         OUTSIDE the lock — tens of MB of disk I/O must never stall the tick loop
         (NFR6). The changeset was already installed in this exact order during the
         shadow run, so a live install failure here is highly unlikely.
+
+        If an install DOES fail, its setup() may already have half-mutated the
+        live world (a registered species, buffered spawns). We restore the world
+        to the pre-install snapshot before re-raising, so a rejected candidate can
+        never taint the running world (the disk round-trip is on the rare failure
+        path only; success still writes outside the lock).
         """
         with self.lock:
             cap = capture(self.world)
             path = SNAPSHOT_DIR / f"pre-{self.world.epoch}-{self.world.tick}.npz"
-            installed = [self.host.install(src).name for src in sources]
+            try:
+                installed = [self.host.install(src).name for src in sources]
+            except Exception:
+                write_capture(cap, path)
+                restored = load_snapshot(path)
+                self.host = PluginHost.rebind(restored)
+                self.world = restored
+                path.unlink(missing_ok=True)
+                raise
         write_capture(cap, path)
         self.last_promotion_snapshot = path
         return {"installed": installed, "snapshot": path.name}

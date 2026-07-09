@@ -44,6 +44,10 @@ class PluginStore:
         return self._data.get(key, default)
 
     def set(self, key: str, value: float | int | str) -> None:
+        if not isinstance(key, str):
+            # non-str keys survive in memory but JSON-coerce to str on snapshot,
+            # so they'd silently desync after a reload/shadow/rollback — reject them
+            raise CapabilityViolation("store-key-type", "world.store keys must be str")
         if not isinstance(value, (int, float, str)):
             raise CapabilityViolation("store-type", "world.store values must be int/float/str")
         if key not in self._data and len(self._data) >= self._max_keys:

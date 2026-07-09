@@ -20,6 +20,20 @@ def on_tick(world):
 
 STATIC_BAD = "import os\nPLUGIN_META = {}\n"
 
+# passes static validation but its setup registers a species then raises — the
+# classic "half-mutated then aborted" taint vector
+SETUP_TAINT = '''
+PLUGIN_META = {"name": "tainter", "contract": 1, "species": ["ghost"], "lineage_parent": None}
+
+def setup(world):
+    world.register_species("ghost")
+    world.spawn("ghost", 5.0, 5.0)
+    raise ValueError("boom after registering + spawning")
+
+def on_tick(world):
+    pass
+'''
+
 
 @pytest.fixture()
 def client():
@@ -33,6 +47,20 @@ def test_static_reject_no_snapshot_no_change(client):
     assert r["error"] == "rejected"
     assert any(v["code"] == "banned-import" for v in r["reasons"])
     assert {p["name"] for p in client.get("/api/plugins").json()} == plugins0
+
+
+def test_failed_setup_does_not_taint_live_world(client):
+    """A candidate whose setup half-mutates (registers a species) then raises must
+    leave the LIVE world untouched — the runner restores it from the pre-install
+    snapshot before re-raising."""
+    base = {p["name"] for p in client.get("/api/plugins").json()}
+    r = client.post("/api/plugins/install", json={"source": SETUP_TAINT}).json()
+    assert r.get("error") == "rejected"
+    # the ghost species from the aborted setup must NOT be in the restored world
+    pops = client.get("/api/metrics").json()["populations"]
+    assert "ghost" not in pops
+    # base plugins survive the restore intact
+    assert {p["name"] for p in client.get("/api/plugins").json()} == base
 
 
 def test_promote_quarantine_rollback(client):

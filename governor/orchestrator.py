@@ -291,7 +291,8 @@ class Orchestrator:
         jobs = [ShadowJob(str(snap_path), None, cfg.shadow_ticks, cfg.budgets, "control")]
         jobs += [
             ShadowJob(str(snap_path), None, cfg.shadow_ticks, cfg.budgets, label,
-                      candidate_sources=proposal.sources)
+                      candidate_sources=proposal.sources,
+                      candidate_species=self._changeset_species(proposal))
             for label, proposal, _v in validated
         ]
         results = {r.label: r for r in run_shadow_batch(jobs, cfg.max_parallel_workers)}

@@ -116,6 +116,36 @@ def test_torture_batch(live_snapshot):
     assert any(k in membomb.reason for k in ("rss-budget", "wall-budget", "tick-budget", "worker-died"))
 
 
+DOOMED = '''
+PLUGIN_META = {"name": "doomed", "contract": 1, "species": ["mayfly"], "lineage_parent": None}
+
+def setup(world):
+    world.register_species("mayfly", lifespan=80)
+    for _ in range(10):
+        x, y = world.random_surface_point()
+        world.spawn("mayfly", x, y, energy=100.0)
+
+def on_tick(world):
+    pass  # no reproduction: the cohort ages out and the species dies
+'''
+
+
+def test_early_abort_when_own_species_goes_extinct(live_snapshot):
+    """A candidate whose species dies out is a decided loss — the worker aborts
+    past the burn-in instead of simulating the full horizon (faster cycles)."""
+    job = ShadowJob(live_snapshot, DOOMED, ticks=1000, label="doomed",
+                    budgets=Budgets(wall_s=25.0, rss_mb=400.0, tick_ms=250.0),
+                    candidate_species=["mayfly"])
+    [res] = run_shadow_batch([job], max_parallel=1)
+    assert not res.ok
+    assert "own-species-extinct" in res.reason
+    last = res.metrics["samples"][-1]
+    assert last["populations"].get("mayfly", 0) == 0
+    # it stopped near the burn-in (ticks//2 = 500 run-ticks, +100 snapshot start),
+    # well short of the full 1000-tick horizon
+    assert last["tick"] < 900
+
+
 def _socket_probe(q):
     from governor.shadow import _sandbox_bootstrap
     _sandbox_bootstrap()

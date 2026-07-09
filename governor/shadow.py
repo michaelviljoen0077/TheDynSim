@@ -44,6 +44,9 @@ class ShadowJob:
     # set (non-empty) it supersedes candidate_source. Kept as a trailing field so
     # positional ShadowJob(path, source, ...) construction stays valid.
     candidate_sources: list[str] | None = None
+    # species the candidate introduces/owns: once ALL of them are extinct past a
+    # burn-in the run is doomed, so the worker aborts early (faster cycles).
+    candidate_species: list[str] | None = None
 
 
 @dataclass
@@ -89,6 +92,11 @@ def _shadow_worker(job: dict, queue: mp.Queue) -> None:
         pops0 = _populations(world)
         samples: list[dict] = []
         tick_times: list[float] = []
+        # early-abort: once the candidate's own species are ALL extinct past a
+        # burn-in, the run is a decided loss — stop instead of simulating the full
+        # horizon (faster cycles). Control runs (no candidate species) never abort.
+        watch_species = list(job.get("candidate_species") or [])
+        abort_burn_in = min(int(job["ticks"]) // 2, 800)
         tick_budget_s = job["budgets"]["tick_ms"] / 1000.0
         max_consecutive = int(job["budgets"].get("tick_breach_consecutive", 10))
         breach_fraction = float(job["budgets"].get("tick_breach_fraction", 0.05))
@@ -112,11 +120,18 @@ def _shadow_worker(job: dict, queue: mp.Queue) -> None:
                            "metrics": {"samples": samples}})
                 return
             if i % SAMPLE_EVERY == 0:
+                pops = _populations(world)
                 samples.append({
                     "tick": world.tick,
-                    "populations": _populations(world),
+                    "populations": pops,
                     "flora_mean": round(float(world.flora.density.mean()), 5),
                 })
+                if (watch_species and i >= abort_burn_in
+                        and all(pops.get(s, 0) == 0 for s in watch_species)):
+                    queue.put({"label": job["label"], "ok": False,
+                               "reason": f"own-species-extinct: {watch_species} gone by tick {i}",
+                               "metrics": {"samples": samples}})
+                    return
 
         plugin_errors = {name: r.error_count for name, r in host.plugins.items() if r.error_count}
         quarantined = [name for name, r in host.plugins.items() if r.status == "quarantined"]

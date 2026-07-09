@@ -12,7 +12,7 @@ import json
 import time
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -25,6 +25,10 @@ PROPOSAL_SCHEMA = {
         "lineage_parent": {"type": ["string", "null"]},
         "confidence": {"type": "number"},
         "plugin_source": {"type": "string"},
+        # optional: additional complete plugin sources applied together with
+        # plugin_source as ONE change (add-a-species-and-tweak-another, or a
+        # multi-plugin balance pass). Empty/absent = a single-plugin change.
+        "secondary_edits": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["analysis", "hypothesis", "expected_outcome", "confidence", "plugin_source"],
 }
@@ -38,6 +42,13 @@ class CandidateProposal:
     confidence: float
     plugin_source: str
     lineage_parent: str | None = None
+    secondary_edits: list[str] = field(default_factory=list)
+
+    @property
+    def sources(self) -> list[str]:
+        """Every plugin source in this changeset — the primary plus any secondary
+        edits — applied in order (validation, shadow, and promotion all use this)."""
+        return [self.plugin_source, *self.secondary_edits]
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -65,6 +76,9 @@ def _parse_proposal(text: str) -> CandidateProposal:
     missing = [k for k in PROPOSAL_SCHEMA["required"] if k not in data]
     if missing:
         raise GenerationError(f"proposal missing keys: {missing}")
+    edits = data.get("secondary_edits") or []
+    if not isinstance(edits, list):
+        edits = []
     return CandidateProposal(
         analysis=str(data["analysis"]),
         hypothesis=str(data["hypothesis"]),
@@ -72,6 +86,7 @@ def _parse_proposal(text: str) -> CandidateProposal:
         confidence=float(data["confidence"]),
         plugin_source=str(data["plugin_source"]),
         lineage_parent=data.get("lineage_parent"),
+        secondary_edits=[str(s) for s in edits if str(s).strip()],
     )
 
 

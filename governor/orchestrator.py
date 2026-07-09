@@ -260,18 +260,18 @@ class Orchestrator:
         validated = []
         base_prompt = self._build_prompt(report, recall, live_sources, selected[0], [])
         for label, proposal in proposals:
-            result = validate_plugin(proposal.plugin_source)
-            if not result.ok:
-                repair_prompt = self._build_repair_prompt(base_prompt, proposal, result)
+            result, bad = self._validate_changeset(proposal)
+            if bad is not None:
+                repair_prompt = self._build_repair_prompt(base_prompt, proposal, bad)
                 try:
                     proposal2, usage2 = self.provider.generate(repair_prompt)
                     tokens_in += usage2.tokens_in
                     tokens_out += usage2.tokens_out
-                    result2 = validate_plugin(proposal2.plugin_source)
-                    if result2.ok:
+                    result2, bad2 = self._validate_changeset(proposal2)
+                    if bad2 is None:
                         validated.append((label, proposal2, result2))
                         continue
-                    result = result2
+                    result = bad2
                     proposal = proposal2
                 except GenerationError:
                     pass
@@ -290,7 +290,8 @@ class Orchestrator:
         self.status = CycleStatus("shadow", cycle_id, f"{len(validated)} candidates + control")
         jobs = [ShadowJob(str(snap_path), None, cfg.shadow_ticks, cfg.budgets, "control")]
         jobs += [
-            ShadowJob(str(snap_path), proposal.plugin_source, cfg.shadow_ticks, cfg.budgets, label)
+            ShadowJob(str(snap_path), None, cfg.shadow_ticks, cfg.budgets, label,
+                      candidate_sources=proposal.sources)
             for label, proposal, _v in validated
         ]
         results = {r.label: r for r in run_shadow_batch(jobs, cfg.max_parallel_workers)}
@@ -339,16 +340,18 @@ class Orchestrator:
             cand_id, label, proposal, score = best
             self.status = CycleStatus("committing", cycle_id, label)
             try:
-                info = self.runner.promote(proposal.plugin_source)
+                info = self.runner.promote_changeset(proposal.sources)
+                installed = info["installed"]  # list of plugin names
                 decision = "promoted"
                 self.notebook.set_candidate_fate(cand_id, "promoted")
                 self.notebook.record_intervention(
                     report["epoch"], report["tick"], "promotion",
-                    plugin_name=info["installed"],
-                    details={"cycle_id": cycle_id, "fitness": score.total})
+                    plugin_name=", ".join(installed),
+                    details={"cycle_id": cycle_id, "fitness": score.total,
+                             "installed": installed})
                 self._last_promotion = {
                     "cycle_id": cycle_id,
-                    "plugin_name": info["installed"],
+                    "plugin_name": installed[0],  # primary change; outcome tracks its species
                     "expected": proposal.expected_outcome,
                     "report": report,
                 }
@@ -364,10 +367,34 @@ class Orchestrator:
 
     # -- helpers --------------------------------------------------------------------
 
+    def _validate_changeset(self, proposal):
+        """Validate every source in the changeset. Returns (primary_result,
+        first_failing_result_or_None) — all sources must pass for the changeset
+        to be viable; the primary result carries the meta we record."""
+        primary = validate_plugin(proposal.plugin_source)
+        results = [primary] + [validate_plugin(s) for s in proposal.secondary_edits]
+        for r in results:
+            if not r.ok:
+                return primary, r
+        return primary, None
+
+    def _changeset_species(self, proposal) -> list[str]:
+        """Union of species declared across all sources in the changeset (order
+        preserved), so fitness credits/penalises every species the change owns."""
+        species: list[str] = []
+        for src in proposal.sources:
+            meta = validate_plugin(src).meta or {}
+            for s in (meta.get("species") or []):
+                if s not in species:
+                    species.append(s)
+        return species
+
     def _proposal_meta(self, proposal) -> dict:
         result = validate_plugin(proposal.plugin_source)
         meta = dict(result.meta or {})
         meta["hypothesis"] = proposal.hypothesis
+        meta["species"] = self._changeset_species(proposal)
+        meta["changeset_size"] = len(proposal.sources)
         return meta
 
     def _measure_previous_outcome(self, current_report: dict) -> None:
@@ -460,8 +487,17 @@ species going extinct in the shadow run is heavily penalized: make sure it can
 feed itself and reproduce sustainably (reproduction should cost energy and take
 time — runaway breeders overcrowd and score badly).
 
+You MAY bundle a coordinated change: put your main plugin in plugin_source and
+add ONE OR MORE complete extra plugin sources in "secondary_edits" (a list) that
+should take effect together — e.g. introduce a prey species in plugin_source AND,
+as a secondary edit, mutate the existing predator (lineage_parent) so it hunts
+that prey; or ship two related rebalances at once. Leave secondary_edits empty
+for a single-plugin change. Every source is validated and shadow-tested together,
+and promoted or rejected as one unit — so only bundle changes that belong together.
+
 Respond with analysis, hypothesis, expected_outcome (concrete and measurable),
-confidence (0-1), lineage_parent (or null), and the complete plugin_source."""
+confidence (0-1), lineage_parent (or null), the complete plugin_source, and
+optionally secondary_edits (a list of complete plugin sources; omit or [] if none)."""
 
     def _build_repair_prompt(self, original_prompt: str, proposal, result) -> str:
         import json as _json

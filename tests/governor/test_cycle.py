@@ -65,7 +65,28 @@ def on_tick(world):
 '''
 
 
-def proposal(source, name, expected="richer ecosystem"):
+MOSS = '''
+PLUGIN_META = {"name": "moss_patch", "contract": 1, "species": ["moss"], "lineage_parent": None}
+
+def setup(world):
+    world.register_species("moss", size=0.5, color="#6b8f4d")
+    for _ in range(40):
+        x, y = world.random_surface_point()
+        world.spawn("moss", x, y, energy=90.0)
+
+def on_tick(world):
+    for m in world.entities("moss"):
+        e = world.get(m, "energy") - 0.01
+        x, y, _z = world.pos(m)
+        e += world.eat_flora(x, y, 0.003) * 25.0
+        world.set(m, "energy", min(e, 110.0))
+        if e > 90.0 and world.count("moss") < 150:
+            world.set(m, "energy", e * 0.5)
+            world.spawn("moss", x, y, energy=e * 0.5)
+'''
+
+
+def proposal(source, name, expected="richer ecosystem", secondary_edits=None):
     return {
         "analysis": f"{name}: test analysis",
         "hypothesis": f"{name} improves the ecosystem",
@@ -73,6 +94,7 @@ def proposal(source, name, expected="richer ecosystem"):
         "confidence": 0.8,
         "plugin_source": source,
         "lineage_parent": None,
+        "secondary_edits": secondary_edits or [],
     }
 
 
@@ -156,6 +178,44 @@ def test_outcome_feedback_and_recall(rig):
     # recall surfaces the promoted experiment for related species
     recall = notebook.recall(["beetle", "grazer"])
     assert any(r["fate"] == "promoted" for r in recall)
+
+
+def test_promote_changeset_installs_and_rolls_back_together(rig):
+    """A changeset promotes multiple plugins under ONE snapshot, so a rollback
+    reverts every change together (atomic multi-plugin promotion)."""
+    runner, _notebook, _tmp = rig
+    before = {p["name"] for p in runner.host.state()}
+    info = runner.promote_changeset([BEETLE, MOSS])
+    assert set(info["installed"]) == {"beetle_colony", "moss_patch"}
+    live = {p["name"] for p in runner.host.state()}
+    assert {"beetle_colony", "moss_patch"} <= live
+    runner.rollback()
+    after = {p["name"] for p in runner.host.state()}
+    assert "beetle_colony" not in after and "moss_patch" not in after
+    assert after == before
+
+
+def test_changeset_candidate_promotes_all_its_plugins(rig):
+    """A single candidate that bundles a new species (primary) + a second plugin
+    (secondary edit) is validated, shadow-tested, and promoted as one unit."""
+    runner, notebook, tmp_path = rig
+    provider = ReplayProvider([
+        proposal(BEETLE, "beetle+moss", secondary_edits=[MOSS]),
+        proposal(HOSTILE, "evil"),
+        proposal(KILLER, "plague"),
+        proposal(HOSTILE, "evil-repair"),
+    ])
+    orch = make_orch(runner, notebook, provider, tmp_path)
+    assert orch.run_cycle() == "promoted"
+    plugins = {p["name"] for p in runner.host.state()}
+    assert {"beetle_colony", "moss_patch"} <= plugins
+    assert runner.world.registry.by_name.get("beetle") is not None
+    assert runner.world.registry.by_name.get("moss") is not None
+    # the recorded candidate meta reflects the whole changeset
+    cands = notebook.candidates_for(notebook.cycles()[0]["id"])
+    promoted = next(c for c in cands if c["fate"] == "promoted")
+    assert promoted["meta"]["changeset_size"] == 2
+    assert set(promoted["meta"]["species"]) == {"beetle", "moss"}
 
 
 def test_busy_guard(rig):

@@ -39,6 +39,25 @@
   left: 14px;
 }
 
+/* bottom-left stack: SIMULATION + GOD MODE share the corner, growing upward,
+   instead of each panel defaulting to (0,0) and colliding with the status panel */
+.panel-col-bl {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
+  pointer-events: none;
+}
+.panel-col-bl .panel {
+  position: relative;
+  bottom: auto;
+  left: auto;
+}
+
 .panel-title {
   display: flex;
   align-items: center;

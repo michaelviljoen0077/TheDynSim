@@ -161,6 +161,7 @@ export function Hud() {
         ))}
       </div>
 
+      <div className="panel-col-bl">
       <div className="panel panel-controls">
         <div className="panel-title">SIMULATION</div>
         <div className="button-row">
@@ -285,6 +286,7 @@ export function Hud() {
             🔥 Scorch
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

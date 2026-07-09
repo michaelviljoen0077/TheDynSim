@@ -175,19 +175,28 @@ class EngineRunner:
     # -- promotion & rollback (Story 2.4) --------------------------------------
 
     def promote(self, source: str) -> dict:
-        """Pre-promotion snapshot -> hot-load. Raises PluginInstallError on rejection.
+        """Pre-promotion snapshot -> hot-load one plugin. Raises PluginInstallError
+        on rejection. Thin wrapper over promote_changeset for the single-plugin case."""
+        info = self.promote_changeset([source])
+        return {"installed": info["installed"][0], "snapshot": info["snapshot"]}
 
-        The world state is *captured* (in-memory copy) under the lock, then the
-        install runs under the lock, then the snapshot is written to disk OUTSIDE
-        the lock — tens of MB of disk I/O must never stall the tick loop (NFR6).
+    def promote_changeset(self, sources: list[str]) -> dict:
+        """Pre-promotion snapshot -> hot-load a CHANGESET of plugins atomically.
+
+        One snapshot covers the whole set, so a rollback reverts every change
+        together. Sources install in order under the lock (raising
+        PluginInstallError aborts the rest); the snapshot is written to disk
+        OUTSIDE the lock — tens of MB of disk I/O must never stall the tick loop
+        (NFR6). The changeset was already installed in this exact order during the
+        shadow run, so a live install failure here is highly unlikely.
         """
         with self.lock:
             cap = capture(self.world)
             path = SNAPSHOT_DIR / f"pre-{self.world.epoch}-{self.world.tick}.npz"
-            record = self.host.install(source)  # raises PluginInstallError -> nothing written
+            installed = [self.host.install(src).name for src in sources]
         write_capture(cap, path)
         self.last_promotion_snapshot = path
-        return {"installed": record.name, "snapshot": path.name}
+        return {"installed": installed, "snapshot": path.name}
 
     def rollback(self) -> dict:
         """Restore the pre-promotion snapshot (world + plugin set), bump epoch (NFR9)."""

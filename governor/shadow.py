@@ -36,10 +36,14 @@ class Budgets:
 @dataclass
 class ShadowJob:
     snapshot_path: str
-    candidate_source: str | None      # None = baseline control run
+    candidate_source: str | None      # None = baseline control run (single-source form)
     ticks: int = 2000
     budgets: Budgets = field(default_factory=Budgets)
     label: str = "control"
+    # changeset form: several plugin sources installed together in order. When
+    # set (non-empty) it supersedes candidate_source. Kept as a trailing field so
+    # positional ShadowJob(path, source, ...) construction stays valid.
+    candidate_sources: list[str] | None = None
 
 
 @dataclass
@@ -71,9 +75,12 @@ def _shadow_worker(job: dict, queue: mp.Queue) -> None:
 
         world = load_snapshot(job["snapshot_path"])
         host = PluginHost.rebind(world)
-        if job["candidate_source"] is not None:
+        # changeset: install every source in order (a control run has none)
+        sources = job.get("candidate_sources") or (
+            [job["candidate_source"]] if job["candidate_source"] is not None else [])
+        for src in sources:
             try:
-                host.install(job["candidate_source"], run_setup=True)
+                host.install(src, run_setup=True)
             except PluginInstallError as e:
                 queue.put({"label": job["label"], "ok": False,
                            "reason": f"install-failed: {e.reasons}", "metrics": {}})

@@ -14,6 +14,10 @@ def setup(world):
     world.register_species(
         "grazer", size=0.7, color="#c9a35c", speed=0.9, lifespan=4500,
         strata=(world.SURFACE,), props=("gestation", "heading"),
+        # heritable speed: fast grazers flee wolves better but the engine charges
+        # a coupled energy cost, so speed evolves toward an equilibrium (natural
+        # selection). Offspring inherit a mutated value (see the spawn below).
+        genes={"speed": 1.0}, gene_sigma=0.05,
     )
     for _ in range(140):
         x, y = world.random_surface_point()
@@ -96,7 +100,8 @@ def on_tick(world):
                     population += 1
                     world.spawn("grazer", x + world.rng.uniform(-2, 2),
                                 y + world.rng.uniform(-2, 2),
-                                stratum=world.SURFACE, energy=45.0, face=f)
+                                stratum=world.SURFACE, energy=45.0, face=f,
+                                parent=grazer)  # inherit speed gene (mutated)
         elif energy > 165.0 and world.get(grazer, "age") > 200 and population < 1500:
             # density-dependent conception: crowded or overgrazed ground means no
             # pregnancy — the population saturates against its resources instead

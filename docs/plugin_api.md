@@ -84,6 +84,24 @@ def on_tick(world):
   (death cause `old_age`). Faster species should cost more energy per tick — that's
   your design responsibility, and the fitness function punishes free lunches.
 
+### Heritable genes & natural selection (evolution WITHIN a species)
+Declare `genes={"name": founder_value, ...}` (up to 6) on `register_species` to give
+a species evolvable traits. Each entity carries its OWN value; offspring inherit a
+parent's genome with gaussian mutation (`gene_sigma`, default 0.08), clamped to
+[0.25x, 4x] the founder value. Selection is emergent: variants that survive and
+reproduce spread, so the species ADAPTS over generations without you (or the
+governor) editing code.
+- Read a gene: `world.gene(handle, "name")` — drive behaviour off the evolved value.
+- Inherit on reproduction: pass `parent=<handle>` to `world.spawn`, or use
+  `world.breed` (it inherits+mutates automatically).
+- The **`speed`** gene is special: the engine scales that entity's speed cap by it
+  AND charges a coupled energy cost above the baseline, so mobility evolves to an
+  equilibrium (see the grazer — it evolves to outrun wolves, but not for free).
+- The report shows each species' mean gene values, so drift is observable.
+Any gene name works ("metabolism", "boldness", "clutch"…); non-`speed` genes are
+plain heritable data your plugin reads and acts on. Prefer evolving an existing
+species' trait to hand-tuning a new one.
+
 ### Writing a STABLE predator (read this before adding one)
 The most common failure is a predator that hunts so well it exterminates its prey
 and then starves — wiping out two species. A sustainable predator:

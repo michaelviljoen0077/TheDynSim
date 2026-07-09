@@ -130,6 +130,7 @@ class EngineRunner:
             plugin_id = rec.plugin_id if rec is not None else -1
             stratum = int(sp.strata[0])
             store = self.world.store
+            genome = self.world.registry.default_genome(sp) if sp.gene_slots else None
             nfaces = 6 if self.world.geom is not None else 1
             n = max(1, min(int(count), 2000))
             spawned = 0
@@ -138,7 +139,7 @@ class EngineRunner:
                 if (self.world.terrain.land_points(face) if self.world.geom is not None
                         else self.world.terrain.land_points):
                     x, y = self._random_land_point(face)
-                    store.spawn(sp.id, x, y, 0.0, stratum, 100.0, plugin_id, face)
+                    store.spawn(sp.id, x, y, 0.0, stratum, 100.0, plugin_id, face, genome)
                     spawned += 1
         return {"spawned": spawned, "species": species}
 

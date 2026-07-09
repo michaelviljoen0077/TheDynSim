@@ -19,6 +19,12 @@ from engine.spatial import SpatialHash
 
 STRATA = {"underground": UNDERGROUND, "surface": SURFACE, "sky": SKY}
 
+# energy/tick burned per unit of 'speed' gene above the founder baseline (1.0):
+# the cost that makes mobility evolve toward an equilibrium, not toward infinity.
+# Tuned low so a real selection differential (e.g. fleeing a faster predator) can
+# still push the trait — but nonzero, so it can't run away to the cap for free.
+SPEED_COST_K = 0.03
+
 
 class World:
     UNDERGROUND = UNDERGROUND
@@ -36,8 +42,9 @@ class World:
         # shadow fork always evaluates under normal caps (fair fitness).
         self.caps_enabled = True
         self.rng = np.random.default_rng(config.seed)
-        self.registry = SpeciesRegistry(config.max_prop_slots)
-        self.store = EntityStore(config.initial_capacity, config.max_prop_slots)
+        self.registry = SpeciesRegistry(config.max_prop_slots, config.max_gene_slots)
+        self.store = EntityStore(config.initial_capacity, config.max_prop_slots,
+                                 config.max_gene_slots)
         self.commands = CommandBuffer()
         self.geom = CubeGeometry(config.size) if config.cube else None
         # cube queries use a global 3D index (seamless across faces); flat/wrap
@@ -145,8 +152,10 @@ class World:
                             water=self.terrain.water_mask,
                             swim_speeds=self.registry.swim_speeds_array(),
                             wrap=self.config.wrap, geom=self.geom,
-                            heading_slots=self.registry.heading_slots_array())
+                            heading_slots=self.registry.heading_slots_array(),
+                            speed_gene_slots=self.registry.gene_slot_array("speed"))
         self._water_effects()
+        self._gene_costs()
         self._crowding_stress()
         self._death_sweep()
         self._old_age_sweep()
@@ -169,6 +178,26 @@ class World:
             "species": species_name, "plugin": plugin_name, "tick": self.tick,
             "epoch": self.epoch,
         })
+
+    def _gene_costs(self) -> None:
+        """Natural-selection cost coupled to the 'speed' gene: moving faster than
+        the founder baseline (gene > 1.0) burns extra energy each tick. This is
+        what makes speed evolve to an EQUILIBRIUM — faster helps catch prey / flee,
+        but costs upkeep, so the population settles where the trade-off balances."""
+        slots = self.registry.gene_slot_array("speed")
+        if slots.size == 0 or not bool((slots >= 0).any()):
+            return
+        store = self.store
+        alive = np.flatnonzero(store.alive)
+        if alive.size == 0:
+            return
+        sp_slot = slots[store.species_id[alive]]
+        have = sp_slot >= 0
+        if not bool(have.any()):
+            return
+        rows = alive[have]
+        gene = store.genome[rows, sp_slot[have]]
+        store.energy[rows] -= SPEED_COST_K * np.maximum(0.0, gene - 1.0)
 
     def _water_effects(self) -> None:
         """Surface entities on open water: swimmers are fine, non-swimmers drown."""

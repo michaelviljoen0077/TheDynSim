@@ -27,13 +27,21 @@ def build_report(world: World, prev: dict | None = None) -> dict:
                 STRATUM_NAMES[int(s)]: int(c)
                 for s, c in zip(strata.tolist(), counts.tolist(), strict=True)
             }
-        populations[sp.name] = {
+        entry = {
             "total": int(rows.size),
             "by_stratum": by_stratum,
             "mean_energy": round(float(store.energy[rows].mean()), 1) if rows.size else 0.0,
             "mean_age": round(float(store.age[rows].mean()), 1) if rows.size else 0.0,
             "plugin": sp.plugin,
         }
+        # evolved traits: mean of each heritable gene across the living population,
+        # so the governor can SEE a species adapting (drifting from its founder value)
+        if sp.gene_slots and rows.size:
+            entry["genes"] = {
+                name: round(float(store.genome[rows, slot].mean()), 3)
+                for name, slot in sp.gene_slots.items()
+            }
+        populations[sp.name] = entry
 
     w = world.weather
     report = {

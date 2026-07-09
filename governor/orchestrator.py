@@ -487,6 +487,11 @@ loop over world.entities — it is 2-3x faster and lets populations grow large. 
 a per-entity loop only for genuinely conditional behaviour (fleeing, water
 avoidance), and still do the uniform parts in batch.
 
+EVOLUTION: to let a species ADAPT on its own, declare genes={...} and have
+offspring inherit them (parent= on spawn, or world.breed). The report shows mean
+gene values per species — if you see a trait drifting, the population is adapting;
+prefer nudging that (or adding a gene) over hand-tuning fixed stats.
+
 Your candidate will be tested in a shadow simulation and scored on diversity,
 stability, extinction avoidance, trophic balance, and sustainability — RELATIVE to
 a control run without it. It must beat "do nothing" to be promoted. Your own

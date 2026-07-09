@@ -120,7 +120,9 @@ class WorldAPI:
     def register_species(self, name: str, size: float = 1.0, color: str = "#cccccc",
                          speed: float = 2.5, swim_speed: float = 0.0, lifespan: int = 0,
                          strata: tuple[int, ...] = (SURFACE,),
-                         props: tuple[str, ...] = ()) -> None:
+                         props: tuple[str, ...] = (),
+                         genes: dict[str, float] | None = None,
+                         gene_sigma: float = 0.08) -> None:
         if name not in self._declared:
             raise CapabilityViolation(
                 "undeclared-species",
@@ -150,14 +152,21 @@ class WorldAPI:
         self._world.registry.register(
             name, plugin=self._plugin_name, size=size, color=color, speed=speed,
             swim_speed=swim_speed, lifespan=lifespan, strata=tuple(strata), props=tuple(props),
+            genes=genes, gene_sigma=gene_sigma,
         )
 
     def spawn(self, species: str, x: float, y: float, stratum: int = SURFACE,
-              energy: float = 100.0, z: float = 0.0, face: int = 0) -> None:
+              energy: float = 100.0, z: float = 0.0, face: int = 0,
+              genome: object = None, parent: int | None = None) -> None:
         """Spawn an owned entity. Hitting a population/spawn-rate cap is an
         ENVIRONMENTAL limit, not a programming error: the spawn is silently
         dropped and counted in `spawn_drops` — it must never abort the tick or
-        push a healthy plugin toward quarantine (a booming herd is not a bug)."""
+        push a healthy plugin toward quarantine (a booming herd is not a bug).
+
+        Pass `parent=<a live handle of this species>` for manual reproduction so
+        the offspring INHERITS the parent's genome with mutation (natural
+        selection). `genome` is the internal path breed() uses; a founder spawn
+        leaves both None and gets the species' founder genome."""
         sp = self._owned(species)
         cfg = self._world.config
         self._spawns_this_tick += 1
@@ -174,8 +183,12 @@ class WorldAPI:
         if over_rate or (self._world.caps_enabled and over_ceiling):
             self.spawn_drops += 1
             return
+        if genome is None and parent is not None and sp.gene_slots:
+            genome = self._mutate_one(sp, self._world.store.genome[self._row(parent)])
+        g = genome if genome is not None else (
+            self._world.registry.default_genome(sp) if sp.gene_slots else None)
         self._world.commands.spawn(sp.id, float(x), float(y), float(z), int(stratum),
-                                   float(energy), self._plugin_id, int(face))
+                                   float(energy), self._plugin_id, int(face), g)
 
     def remove(self, handle: int) -> None:
         self._owned_row(handle)
@@ -214,6 +227,18 @@ class WorldAPI:
         if slot is None:
             raise CapabilityViolation("unknown-prop", f"{sp.name!r} has no prop {prop!r}")
         return float(s.props[row, slot])
+
+    def gene(self, handle: int, name: str) -> float:
+        """This entity's heritable value for a named gene (its own mutated copy).
+        Founders start at the declared value; offspring inherit a parent's value
+        with mutation, so reading a gene lets behaviour depend on evolved traits."""
+        row = self._row(handle)
+        s = self._world.store
+        sp = self._world.registry.by_id[int(s.species_id[row])]
+        slot = sp.gene_slots.get(name)
+        if slot is None:
+            raise CapabilityViolation("unknown-gene", f"{sp.name!r} has no gene {name!r}")
+        return float(s.genome[row, slot])
 
     def nearest(self, handle: int, species: str | None = None, radius: float = 10.0,
                 stratum: int | None = None) -> int | None:
@@ -430,16 +455,48 @@ class WorldAPI:
         off_e = float(offspring_energy) if offspring_energy is not None else float(cost)
         self._world.commands.energy_delta_batch(
             eligible, np.full(eligible.size, -float(cost), dtype=np.float32))
+        # offspring inherit each parent's genome with gaussian mutation (natural
+        # selection acts on the result); geneless species pass genome=None
+        child_g = self._mutated_offspring_genomes(sp, eligible)
         px = s.px[eligible].tolist()
         py = s.py[eligible].tolist()
         pz = s.pz[eligible].tolist()
         strat = s.stratum[eligible].tolist()
         face = s.face[eligible].tolist()
-        for x, y, z, st, fc in zip(px, py, pz, strat, face, strict=True):
+        for k, (x, y, z, st, fc) in enumerate(zip(px, py, pz, strat, face, strict=True)):
             self.spawn(species, x + self.rng.uniform(-1.5, 1.5),
                        y + self.rng.uniform(-1.5, 1.5),
-                       stratum=int(st), energy=off_e, z=float(z), face=int(fc))
+                       stratum=int(st), energy=off_e, z=float(z), face=int(fc),
+                       genome=None if child_g is None else child_g[k])
         return int(eligible.size)
+
+    def _mutated_offspring_genomes(self, sp, parent_rows: np.ndarray):
+        """Vectorized inheritance: each offspring gets its parent's genome with
+        per-gene gaussian mutation, clamped to [0.25x, 4x] the founder value."""
+        if not sp.gene_slots:
+            return None
+        child = self._world.store.genome[parent_rows].copy()
+        sigma = sp.gene_sigma
+        if sigma > 0.0:
+            for name, slot in sp.gene_slots.items():
+                default = sp.gene_defaults[name]
+                scale = sigma * (abs(default) if default else 1.0)
+                noise = self.rng.normal(0.0, scale, size=parent_rows.size)
+                lo, hi = sorted((0.25 * default, 4.0 * default))
+                child[:, slot] = np.clip(child[:, slot] + noise, lo, hi)
+        return child
+
+    def _mutate_one(self, sp, base: np.ndarray) -> np.ndarray:
+        """Single-offspring inheritance: parent genome + per-gene gaussian mutation."""
+        g = base.copy()
+        sigma = sp.gene_sigma
+        if sigma > 0.0:
+            for name, slot in sp.gene_slots.items():
+                default = sp.gene_defaults[name]
+                scale = sigma * (abs(default) if default else 1.0)
+                lo, hi = sorted((0.25 * default, 4.0 * default))
+                g[slot] = float(np.clip(g[slot] + self.rng.normal(0.0, scale), lo, hi))
+        return g
 
     # -- environment ---------------------------------------------------------------
     # env reads take a `face` (0 for flat/wrap). On a cube, pass world.face(handle)

@@ -39,8 +39,9 @@ class CommandBuffer:
     batch_flora: list[tuple] = field(default_factory=list)     # (face, ix, iy, amount) arrays
 
     def spawn(self, species_id: int, x: float, y: float, z: float,
-              stratum: int, energy: float, plugin_id: int = -1, face: int = 0) -> None:
-        self.ops.append((OP_SPAWN, species_id, x, y, z, stratum, energy, plugin_id, face))
+              stratum: int, energy: float, plugin_id: int = -1, face: int = 0,
+              genome: np.ndarray | None = None) -> None:
+        self.ops.append((OP_SPAWN, species_id, x, y, z, stratum, energy, plugin_id, face, genome))
 
     def remove(self, handle: int) -> None:
         self.ops.append((OP_REMOVE, handle))
@@ -95,7 +96,8 @@ class CommandBuffer:
               swim_speeds: np.ndarray | None = None,
               wrap: bool = False,
               geom=None,
-              heading_slots: np.ndarray | None = None) -> None:
+              heading_slots: np.ndarray | None = None,
+              speed_gene_slots: np.ndarray | None = None) -> None:
         """Apply ops in submission order (deterministic).
 
         Topology: `geom` (a CubeGeometry) folds edge-crossers onto neighbour
@@ -143,7 +145,7 @@ class CommandBuffer:
         for op in self.ops:
             kind = op[0]
             if kind == OP_SPAWN:
-                _, species_id, x, y, z, stratum, energy, plugin_id, face = op
+                _, species_id, x, y, z, stratum, energy, plugin_id, face, genome = op
                 if geom is not None:
                     x = min(max(x, 0.0), world_max - 0.01)
                     y = min(max(y, 0.0), world_max - 0.01)
@@ -154,7 +156,7 @@ class CommandBuffer:
                     x = min(max(x, 0.0), hi)
                     y = min(max(y, 0.0), hi)
                 self.spawned_handles.append(
-                    store.spawn(species_id, x, y, z, stratum, energy, plugin_id, face)
+                    store.spawn(species_id, x, y, z, stratum, energy, plugin_id, face, genome)
                 )
                 if store.px is not xs:
                     # the spawn grew the store: every array was reallocated, so the
@@ -203,7 +205,15 @@ class CommandBuffer:
                 dx = vals[:, 0] - xs[rows]
                 dy = vals[:, 1] - ys[rows]
                 dist = np.sqrt(dx * dx + dy * dy)
-                limit = speeds[store.species_id[rows]]
+                limit = speeds[store.species_id[rows]].astype(np.float32)
+                if speed_gene_slots is not None:
+                    # per-entity 'speed' gene scales the speed cap (natural
+                    # selection on mobility; the coupled energy cost is _gene_costs)
+                    gslot = speed_gene_slots[store.species_id[rows]]
+                    have = np.flatnonzero(gslot >= 0)
+                    if have.size:
+                        limit = limit.copy()
+                        limit[have] *= store.genome[rows[have], gslot[have]]
                 if water is not None and swim_speeds is not None:
                     ix = xs[rows].astype(np.int32)
                     iy = ys[rows].astype(np.int32)

@@ -13,6 +13,7 @@ class WorldConfig:
     topology: str = "flat"           # "flat" (walled) | "wrap" (toroidal) | "cube" (6-face sphere)
     initial_capacity: int = 16384    # entity store starting capacity
     max_prop_slots: int = 8          # per-species named float slots
+    max_gene_slots: int = 6          # per-species heritable genes (per-entity, mutate on breeding)
     field_step_every: int = 1        # step weather/flora every N ticks (perf: >1 on big cubes)
 
     # calendar: 600 ticks/day, 30 days/month, 4 seasons x 90 days = 360-day year.

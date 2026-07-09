@@ -41,11 +41,18 @@ class Species:
     lifespan: int = 0        # max age in ticks; 0 = no old-age death (engine sweeps age>lifespan)
     strata: tuple[int, ...] = (SURFACE,)
     prop_slots: dict[str, int] = field(default_factory=dict)  # prop name -> slot
+    # heritable genes: name -> slot in the per-entity genome. Founder values +
+    # mutation sigma live in gene_defaults / gene_sigma. Offspring inherit the
+    # parent's genome with gaussian mutation (see WorldAPI.breed / world.mutate).
+    gene_slots: dict[str, int] = field(default_factory=dict)
+    gene_defaults: dict[str, float] = field(default_factory=dict)
+    gene_sigma: float = 0.08      # per-generation mutation std-dev (fraction of value)
 
 
 class SpeciesRegistry:
-    def __init__(self, max_prop_slots: int) -> None:
+    def __init__(self, max_prop_slots: int, max_gene_slots: int = 6) -> None:
         self.max_prop_slots = max_prop_slots
+        self.max_gene_slots = max_gene_slots
         self.by_name: dict[str, Species] = {}
         self.by_id: list[Species] = []
 
@@ -60,11 +67,17 @@ class SpeciesRegistry:
         lifespan: int = 0,
         strata: tuple[int, ...] = (SURFACE,),
         props: tuple[str, ...] = (),
+        genes: dict[str, float] | None = None,
+        gene_sigma: float = 0.08,
     ) -> Species:
         if name in self.by_name:
             raise ValueError(f"species {name!r} already registered")
         if len(props) > self.max_prop_slots:
             raise ValueError(f"species {name!r} declares {len(props)} props; max is {self.max_prop_slots}")
+        genes = genes or {}
+        if len(genes) > self.max_gene_slots:
+            raise ValueError(
+                f"species {name!r} declares {len(genes)} genes; max is {self.max_gene_slots}")
         sp = Species(
             id=len(self.by_id),
             name=name,
@@ -76,6 +89,9 @@ class SpeciesRegistry:
             lifespan=max(0, int(lifespan)),
             strata=tuple(strata),
             prop_slots={p: i for i, p in enumerate(props)},
+            gene_slots={g: i for i, g in enumerate(genes)},
+            gene_defaults={g: float(v) for g, v in genes.items()},
+            gene_sigma=max(0.0, float(gene_sigma)),
         )
         self.by_name[name] = sp
         self.by_id.append(sp)
@@ -124,25 +140,47 @@ class SpeciesRegistry:
             [s.prop_slots.get("heading", -1) for s in self.by_id] or [-1], dtype=np.int64
         )
 
+    def default_genome(self, sp: Species) -> np.ndarray:
+        """A founder's genome: each declared gene at its founder value, zeros
+        elsewhere. Offspring inherit a mutated copy of a parent's genome instead."""
+        g = np.zeros(self.max_gene_slots, dtype=np.float32)
+        for name, slot in sp.gene_slots.items():
+            g[slot] = sp.gene_defaults[name]
+        return g
+
+    def gene_slot_array(self, gene: str) -> np.ndarray:
+        """Per-species genome slot of a named gene (else -1), indexed by species id.
+        The engine reads the "speed" gene through this to scale each entity's speed
+        cap by its own heritable value (natural selection on mobility)."""
+        return np.array(
+            [s.gene_slots.get(gene, -1) for s in self.by_id] or [-1], dtype=np.int64
+        )
+
     def to_state(self) -> list[dict]:
         return [
             {
                 "id": s.id, "name": s.name, "plugin": s.plugin, "size": s.size,
                 "color": s.color, "speed": s.speed, "swim_speed": s.swim_speed,
                 "lifespan": s.lifespan, "strata": list(s.strata), "prop_slots": s.prop_slots,
+                "gene_slots": s.gene_slots, "gene_defaults": s.gene_defaults,
+                "gene_sigma": s.gene_sigma,
             }
             for s in self.by_id
         ]
 
     @classmethod
-    def from_state(cls, state: list[dict], max_prop_slots: int) -> SpeciesRegistry:
-        reg = cls(max_prop_slots)
+    def from_state(cls, state: list[dict], max_prop_slots: int,
+                   max_gene_slots: int = 6) -> SpeciesRegistry:
+        reg = cls(max_prop_slots, max_gene_slots)
         for d in state:
             sp = Species(
                 id=d["id"], name=d["name"], plugin=d["plugin"], size=d["size"],
                 color=d["color"], speed=d.get("speed", 2.5),
                 swim_speed=d.get("swim_speed", 0.0), lifespan=d.get("lifespan", 0),
                 strata=tuple(d["strata"]), prop_slots=dict(d["prop_slots"]),
+                gene_slots=dict(d.get("gene_slots", {})),
+                gene_defaults=dict(d.get("gene_defaults", {})),
+                gene_sigma=d.get("gene_sigma", 0.08),
             )
             reg.by_name[sp.name] = sp
             reg.by_id.append(sp)
@@ -152,12 +190,13 @@ class SpeciesRegistry:
 class EntityStore:
     ARRAY_FIELDS = (
         "alive", "generation", "species_id", "plugin_id",
-        "px", "py", "pz", "stratum", "face", "hidden", "energy", "age", "props",
+        "px", "py", "pz", "stratum", "face", "hidden", "energy", "age", "props", "genome",
     )
 
-    def __init__(self, capacity: int, max_prop_slots: int) -> None:
+    def __init__(self, capacity: int, max_prop_slots: int, max_gene_slots: int = 6) -> None:
         self.capacity = capacity
         self.max_prop_slots = max_prop_slots
+        self.max_gene_slots = max_gene_slots
         self.alive = np.zeros(capacity, dtype=bool)
         self.generation = np.zeros(capacity, dtype=np.uint16)
         self.species_id = np.zeros(capacity, dtype=np.uint16)
@@ -171,6 +210,7 @@ class EntityStore:
         self.energy = np.zeros(capacity, dtype=np.float32)
         self.age = np.zeros(capacity, dtype=np.uint32)
         self.props = np.zeros((capacity, max_prop_slots), dtype=np.float32)
+        self.genome = np.zeros((capacity, max_gene_slots), dtype=np.float32)  # heritable genes
         # LIFO freelist, highest row first so early spawns use low rows
         self.freelist: list[int] = list(range(capacity - 1, -1, -1))
         self.count = 0
@@ -199,6 +239,7 @@ class EntityStore:
         energy: float,
         plugin_id: int = -1,
         face: int = 0,
+        genome: np.ndarray | None = None,
     ) -> int:
         if not self.freelist:
             self._grow()
@@ -213,6 +254,10 @@ class EntityStore:
         self.energy[i] = energy
         self.age[i] = 0
         self.props[i, :] = 0.0
+        if genome is not None:
+            self.genome[i, :] = genome
+        else:
+            self.genome[i, :] = 0.0
         self.count += 1
         return (i << GEN_BITS) | int(self.generation[i])
 
@@ -262,7 +307,12 @@ class EntityStore:
         store.capacity = capacity
         store.max_prop_slots = max_prop_slots
         for name in cls.ARRAY_FIELDS:
-            setattr(store, name, arrays[name].copy())
+            if name in arrays:
+                setattr(store, name, arrays[name].copy())
+        # genome may be absent in snapshots written before genes existed
+        if "genome" not in arrays:
+            store.genome = np.zeros((capacity, 6), dtype=np.float32)
+        store.max_gene_slots = int(store.genome.shape[1])
         store.freelist = arrays["freelist"].tolist()
         store.count = int(store.alive.sum())
         return store

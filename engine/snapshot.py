@@ -92,7 +92,8 @@ def load_snapshot(path: str | Path) -> World:
     world.epoch = header["epoch"]
     world.rng = np.random.default_rng()
     world.rng.bit_generator.state = header["rng_state"]
-    world.registry = SpeciesRegistry.from_state(header["species"], config.max_prop_slots)
+    world.registry = SpeciesRegistry.from_state(header["species"], config.max_prop_slots,
+                                                config.max_gene_slots)
     world.store = EntityStore.from_arrays(arrays, config.max_prop_slots)
     if config.cube:
         from engine.cube_fields import CubeFlora, CubeTerrain, CubeWeather

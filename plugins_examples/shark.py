@@ -30,12 +30,10 @@ def setup(world):
 
 
 def on_tick(world):
-    pack = world.count("shark")
-    pack_cap = max(6, world.count("fish") // 28)   # light ratio, but enough to sustain
     sharks = world.entities("shark")
     preys = world.nearest_many("shark", "fish", 20.0)  # one batched query for the school
     for i, shark in enumerate(sharks):
-        energy = world.get(shark, "energy") - 0.025   # very low burn: a meal lasts days, hunts rarely
+        energy = world.get(shark, "energy") - 0.035   # low burn: a meal lasts days, but no free lunch
         x, y, _z = world.pos(shark)
         f = world.face(shark)
 
@@ -50,9 +48,11 @@ def on_tick(world):
         prey = preys[i]
         prey_close = prey is not None and world.distance(shark, prey) < 6.0
 
-        # night rest (unless a fish is right there) — predators don't hunt 24/7
+        # night rest (unless a fish is right there) — predators don't hunt 24/7.
+        # Rest does NOT manufacture energy: a shark's only food is fish, so a school
+        # with no shoal to hunt starves back (predator-prey feedback).
         if world.daylight(shark) < -0.15 and not prey_close:
-            world.set(shark, "energy", min(energy + 0.04, 350.0))
+            world.set(shark, "energy", energy)
             world.move(shark, world.rng.uniform(-0.15, 0.15), world.rng.uniform(-0.15, 0.15))
             continue
 
@@ -76,16 +76,22 @@ def on_tick(world):
 
         world.set(shark, "energy", min(energy, 350.0))
 
+        # NO per-plugin cap: the school is limited by FOOD, not a number — it grows
+        # only when the shoal is fat enough to feed well-fed breeders and thins by
+        # starvation when fish are scarce. The single 500/species ceiling is the only
+        # hard cap (and the shoal itself sits below it, so this rarely bites).
         gestation = world.get(shark, "gestation")
         if gestation > 0.0:
             world.set(shark, "gestation", gestation - 1.0)
             if gestation <= 1.0:
                 for _ in range(2):   # a small litter of pups (K-strategist)
-                    if pack >= pack_cap:
-                        break
-                    pack += 1
                     world.spawn("shark", x + world.rng.uniform(-2, 2),
                                 y + world.rng.uniform(-2, 2), energy=120.0, face=f)
-        elif energy > 255.0 and pack < pack_cap:   # a well-fed shark breeds
+        elif energy > 255.0 and world.count("fish") > 15 * world.count("shark"):
+            # RESOURCE-GATED breeding (food security), same principle as the shoal
+            # only breeding over rich plankton: a shark raises pups only when there
+            # are plenty of fish PER shark. This softly pins the school near a light
+            # predator:prey ratio (~1 shark per 15 fish) so it can't overshoot and
+            # crop the shoal to zero. Not a population cap — "don't breed in a famine".
             world.set(shark, "gestation", 4800.0)  # ~8-day pregnancy
             world.set(shark, "energy", energy - 170.0)

@@ -274,14 +274,20 @@ class CubeFlora:
         # growth & spread scale with dt (ticks since last update) so the amortized
         # regrowth rate is independent of field_step_every — throttle stays purely
         # a perf lever and never unbalances grazing
-        growth = 0.045 * dt * light * temp_factor * moisture * terrain.fertility
+        growth = 0.06 * dt * light * temp_factor * moisture * terrain.fertility
         self.density += growth * self.density * (1.0 - self.density)
+        # density-INDEPENDENT reseeding so an overgrazed cell actually recovers:
+        # logistic growth alone stalls near zero (rate scales with the density that
+        # was just eaten away), which left grazed land barren and starved the herd.
+        self.density += 0.0015 * dt * terrain.fertility * (1.0 - self.density)
         spread = _blur(self.density) - self.density
         self.density += 0.08 * dt * np.clip(spread, 0.0, None) * terrain.fertility
         self.density = np.where(weather.temperature < 0.0, self.density * 0.995, self.density)
         self.density *= 1.0 - terrain.water_mask
+        # subsistence floor on ALL land (not scaled to near-zero on poor ground), so
+        # even low-fertility range feeds a grazer at a trickle instead of starving it.
         self.density = np.maximum(
-            self.density, 0.012 * terrain.fertility * (1.0 - terrain.water_mask)
+            self.density, (0.02 + 0.02 * terrain.fertility) * (1.0 - terrain.water_mask)
         )
         np.clip(self.density, 0.0, 1.0, out=self.density)
 

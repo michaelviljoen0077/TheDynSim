@@ -32,17 +32,13 @@ def setup(world):
 
 
 def on_tick(world):
-    # predator population rides on prey abundance: ~1 wolf per 25 grazers.
-    # counted once per tick (buffered spawns don't show up in count() mid-tick)
-    pack_size = world.count("wolf")
-    pack_cap = max(6, world.count("grazer") // 28)   # light ratio, but enough to sustain the pack
     wolves = world.entities("wolf")
     preys = world.nearest_many("wolf", "grazer", 22.0)  # one batched query for the pack
     for i, wolf in enumerate(wolves):
         # VERY low idle burn: one grazer meal (~48 energy) lasts the wolf ~3 days,
         # a full belly ~3 weeks. Predators gorge then rest, so the pack hunts
         # rarely and predation pressure on the herd is light.
-        energy = world.get(wolf, "energy") - 0.025
+        energy = world.get(wolf, "energy") - 0.06
         x, y, _z = world.pos(wolf)
         f = world.face(wolf)
 
@@ -70,7 +66,11 @@ def on_tick(world):
         # grazer is right on top of it (hunger/opportunity wakes it). Mirrors the
         # grazer's sleep cycle, so both rest through the dark side of the planet.
         if world.daylight(wolf) < -0.15 and not prey_close:
-            world.set(wolf, "energy", min(energy + 0.04, 350.0))  # resting burns little
+            # rest = don't hunt; it does NOT manufacture energy. A wolf's only
+            # energy source is kills, so a pack with no grazers genuinely starves
+            # back (the predator-prey feedback). It still burns its (low) idle
+            # metabolism through the night, just doesn't chase.
+            world.set(wolf, "energy", energy)
             world.move(wolf, world.rng.uniform(-0.15, 0.15), world.rng.uniform(-0.15, 0.15))
             continue
 
@@ -96,17 +96,25 @@ def on_tick(world):
 
         world.set(wolf, "energy", min(energy, 350.0))
 
+        # NO per-plugin cap: the pack is limited by FOOD, not a number. A wolf breeds
+        # only when kills have carried it over the bar, then pays a steep cost — so
+        # the pack grows only when the herd is fat enough to feed it and thins by
+        # starvation when grazers are scarce (the predator-prey feedback that the old
+        # hard ratio short-circuited). The single 500/species ceiling is the only cap.
         gestation = world.get(wolf, "gestation")
         if gestation > 0.0:
             world.set(wolf, "gestation", gestation - 1.0)
             if gestation <= 1.0:
                 for _ in range(2):   # a litter of pups (K-strategist: few, invested)
-                    if pack_size >= pack_cap:
-                        break
-                    pack_size += 1
                     world.spawn("wolf", x + world.rng.uniform(-2, 2),
                                 y + world.rng.uniform(-2, 2),
                                 stratum=world.SURFACE, energy=120.0, face=world.face(wolf))
-        elif energy > 225.0 and pack_size < pack_cap:   # a fed wolf breeds
+        elif energy > 225.0 and world.count("grazer") > 20 * world.count("wolf"):
+            # RESOURCE-GATED breeding (food security), same principle as the herd only
+            # breeding on lush grass: a wolf raises pups only when there are plenty of
+            # grazers PER wolf. This softly pins the pack near a light predator:prey
+            # ratio (~1 wolf per 20 grazers) so it can't overshoot and crop the herd
+            # to zero. Not a population cap — "don't breed in a famine" — and it scales
+            # with the herd, which a big thinly-populated world needs.
             world.set(wolf, "gestation", 4800.0)        # ~8-day pregnancy
             world.set(wolf, "energy", energy - 160.0)

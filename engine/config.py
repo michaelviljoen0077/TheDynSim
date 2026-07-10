@@ -32,11 +32,14 @@ class WorldConfig:
     max_entities_per_plugin: int = 12000
     max_spawns_per_tick: int = 200
     max_store_keys: int = 64
-    # SAFETY NET, not the population control. Real equilibrium comes from the SOFT
-    # mechanisms below (crowding stress + food + breeding cost), which hold healthy
-    # populations far under this. The ceiling only stops a pathological runaway
-    # from exhausting memory; the god-mode caps toggle can suspend it entirely.
-    max_entities_per_species: int = 5000
+    # THE ONE CAP. A single hard ceiling of 500 living members per species — and
+    # nothing else. This is a SAFETY NET, not a balancing tool: it only stops a
+    # runaway species from tanking performance before the governor can react. It is
+    # deliberately NOT how equilibrium is meant to be reached — balance is the
+    # GOVERNOR's job (it tweaks each animal's own code, adds new species, adjusts
+    # plant growth, etc.), and a healthy ecosystem should settle FAR below 500 on
+    # its own. The god-mode caps toggle can suspend even this.
+    max_entities_per_species: int = 500
 
     # density-dependent crowding stress: THE primary (soft) overpopulation control.
     # An entity with more than `crowding_softcap` same-species neighbours within

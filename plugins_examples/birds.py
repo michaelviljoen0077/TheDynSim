@@ -30,13 +30,15 @@ def on_tick(world):
     world.metabolize("bird", 0.02)                                    # low idle burn
     # birds eat LITTLE — a light seed peck, so the flock's footprint on the shared
     # flora is small (it barely competes with the grazing herd), and the modest
-    # gain means breeding surplus takes days to build
-    world.graze("bird", rate=0.008, gain=28.0, max_energy=210.0)
+    # gain means breeding surplus takes days to build. Kept genuinely tiny so even
+    # a big flock can't out-draw the herd off the shared flora and starve it out.
+    world.graze("bird", rate=0.005, gain=28.0, max_energy=210.0)
     world.wander("bird", speed=0.9, turn=0.15)                        # gentle drift
-    # SLOW breeding (high energy bar + steep cost) + density dependence + raptor
-    # predation hold the flock at a low soft equilibrium; the long lifespan carries
-    # birds through. No hard cap.
-    # r-strategist prey: a ~4-day egg incubation (gestation) then a CLUTCH of 3,
-    # so the flock out-breeds raptor predation. Density-dependent (crowd_max).
-    world.breed("bird", energy_over=160.0, cost=110.0, offspring_energy=55.0,
-                crowd_max=5, crowd_radius=10.0, gestation=2400.0, litter=3, cap=900)
+    # r-STRATEGIST prey: birds are HUNTED by raptors, so they must breed FAST to
+    # persist — a short (~3-day) incubation then a clutch of 3. Raptor predation (not
+    # a cap) is what holds the flock down; density-dependence (crowd_max) only bites
+    # if predators fall behind. Their flora footprint stays tiny (low graze rate
+    # above), so a healthy flock still can't out-draw the grazing herd. The single
+    # engine-wide 500/species cap is the only hard limit.
+    world.breed("bird", energy_over=150.0, cost=100.0, offspring_energy=55.0,
+                crowd_max=5, crowd_radius=10.0, gestation=2000.0, litter=3)

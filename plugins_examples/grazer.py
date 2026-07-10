@@ -110,12 +110,15 @@ def on_tick(world):
                                 y + world.rng.uniform(-2, 2),
                                 stratum=world.SURFACE, energy=45.0, face=f,
                                 parent=grazer)  # inherit speed gene (mutated)
-        elif energy > 200.0 and world.get(grazer, "age") > 400:
-            # density-dependent conception: crowded or overgrazed ground means no
-            # pregnancy. A grazer builds a surplus, then carries a LONG (~6-day)
-            # pregnancy — but delivers a big litter, so the r-strategist herd out-
-            # breeds predation. Mature young (age>400) so births aren't delayed too
-            # far past the founders.
-            if world.flora_at(x, y, f) > 0.06 and len(world.within(grazer, 5.0, species="grazer")) < 5:
-                world.set(grazer, "gestation", 3600.0)   # ~6-day pregnancy
+        elif energy > 190.0 and world.get(grazer, "age") > 300:
+            # resource-gated conception, so the herd self-limits near the land's
+            # carrying capacity instead of booming past it and starving: a grazer
+            # breeds only on reasonably vegetated ground and when not crowded (wide
+            # radius so density is sensed even spread out). The flora bar is tuned to
+            # a MIDDLE value — high enough that a fat herd on thinning grass stops
+            # conceiving (no overgraze-collapse), low enough that the herd can still
+            # replace light predation losses and hold a steady population. Gestation
+            # stays short (~4 days) so it rebounds fast from a dip (r-strategist).
+            if world.flora_at(x, y, f) > 0.10 and len(world.within(grazer, 8.0, species="grazer")) < 5:
+                world.set(grazer, "gestation", 2400.0)   # ~4-day pregnancy
                 world.set(grazer, "energy", energy - 140.0)

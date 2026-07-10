@@ -158,7 +158,8 @@ class World:
                             wrap=self.config.wrap, geom=self.geom,
                             heading_slots=self.registry.heading_slots_array(),
                             speed_gene_slots=self.registry.gene_slot_array("speed"),
-                            plankton=self.plankton.density)
+                            plankton=self.plankton.density,
+                            aquatic=self.registry.aquatic_array())
         self._water_effects()
         self._gene_costs()
         self._crowding_stress()

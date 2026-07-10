@@ -145,7 +145,8 @@ class CommandBuffer:
               geom=None,
               heading_slots: np.ndarray | None = None,
               speed_gene_slots: np.ndarray | None = None,
-              plankton: np.ndarray | None = None) -> None:
+              plankton: np.ndarray | None = None,
+              aquatic: np.ndarray | None = None) -> None:
         """Apply ops in submission order (deterministic).
 
         Topology: `geom` (a CubeGeometry) folds edge-crossers onto neighbour
@@ -247,6 +248,11 @@ class CommandBuffer:
         if moved:
             rows = np.fromiter(moved.keys(), dtype=np.int64, count=len(moved))
             vals = np.array(list(moved.values()), dtype=np.float32)
+            # pre-move position/face, kept for the aquatic revert below (xs[rows]
+            # still holds the tick-start coords until the final write-back)
+            ox_r = xs[rows].copy()
+            oy_r = ys[rows].copy()
+            pre_faces = store.face[rows].copy() if geom is not None else None
             if speeds is not None:
                 # clamp net horizontal displacement to the species' speed;
                 # a swimmer currently on water moves at its swim speed instead
@@ -318,6 +324,27 @@ class CommandBuffer:
             else:
                 np.clip(vals[:, 0], 0.0, hi, out=vals[:, 0])
                 np.clip(vals[:, 1], 0.0, hi, out=vals[:, 1])
+            # AQUATIC confinement: a species flagged aquatic can swim and wander
+            # freely, but the engine forbids it from ever leaving the water. Any
+            # move whose destination cell is land is undone — the creature stays
+            # put this tick (position AND face restored, so a seam-crossing fold
+            # onto a land neighbour face is rolled back cleanly). This is the water
+            # analogue of `fly` (SKY stratum) keeping birds off the ground.
+            if aquatic is not None and water is not None:
+                aq = aquatic[store.species_id[rows]]
+                if aq.any():
+                    nix = np.clip(vals[:, 0].astype(np.int32), 0, int(world_max) - 1)
+                    niy = np.clip(vals[:, 1].astype(np.int32), 0, int(world_max) - 1)
+                    if geom is not None:
+                        wet = water[store.face[rows], nix, niy] > 0.5
+                    else:
+                        wet = water[nix, niy] > 0.5
+                    rev = aq & (~wet)
+                    if rev.any():
+                        vals[rev, 0] = ox_r[rev]
+                        vals[rev, 1] = oy_r[rev]
+                        if pre_faces is not None:
+                            store.face[rows[rev]] = pre_faces[rev]
             xs[rows] = vals[:, 0]
             ys[rows] = vals[:, 1]
             zs[rows] = vals[:, 2]

@@ -122,7 +122,8 @@ class WorldAPI:
     # -- species & lifecycle ---------------------------------------------------
 
     def register_species(self, name: str, size: float = 1.0, color: str = "#cccccc",
-                         speed: float = 2.5, swim_speed: float = 0.0, lifespan: int = 0,
+                         speed: float = 2.5, swim_speed: float = 0.0, aquatic: bool = False,
+                         lifespan: int = 0,
                          strata: tuple[int, ...] = (SURFACE,),
                          props: tuple[str, ...] = (),
                          genes: dict[str, float] | None = None,
@@ -155,7 +156,8 @@ class WorldAPI:
             )
         self._world.registry.register(
             name, plugin=self._plugin_name, size=size, color=color, speed=speed,
-            swim_speed=swim_speed, lifespan=lifespan, strata=tuple(strata), props=tuple(props),
+            swim_speed=swim_speed, aquatic=aquatic, lifespan=lifespan,
+            strata=tuple(strata), props=tuple(props),
             genes=genes, gene_sigma=gene_sigma,
         )
 
@@ -542,10 +544,23 @@ class WorldAPI:
         pz = s.pz[parent_rows].tolist()
         strat = s.stratum[parent_rows].tolist()
         face = s.face[parent_rows].tolist()
+        # aquatic parents are engine-confined to water, so their own cell is always
+        # wet: keep newborns there rather than jittering a fry onto a dry shore cell
+        # (the engine reverts land *moves* but can't rescue one *born* on land).
+        water = self._world.terrain.water_mask if sp.aquatic else None
+        size = self._world.config.size
         for k in range(len(px)):
             for _ in range(litter):
-                self.spawn(species, px[k] + self.rng.uniform(-1.5, 1.5),
-                           py[k] + self.rng.uniform(-1.5, 1.5),
+                cx = px[k] + self.rng.uniform(-1.5, 1.5)
+                cy = py[k] + self.rng.uniform(-1.5, 1.5)
+                if water is not None:
+                    ix = min(max(int(cx), 0), size - 1)
+                    iy = min(max(int(cy), 0), size - 1)
+                    wet = (water[int(face[k]), ix, iy] if self._world.geom is not None
+                           else water[ix, iy]) > 0.5
+                    if not wet:               # dry spot: drop the fry on the parent's cell
+                        cx, cy = px[k], py[k]
+                self.spawn(species, cx, cy,
                            stratum=int(strat[k]), energy=off_e, z=float(pz[k]),
                            face=int(face[k]),
                            genome=None if child_g is None else child_g[k])

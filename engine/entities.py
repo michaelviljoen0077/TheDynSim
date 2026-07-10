@@ -38,6 +38,7 @@ class Species:
     color: str = "#cccccc"
     speed: float = 2.5      # engine-enforced max distance per tick (see CommandBuffer.apply)
     swim_speed: float = 0.0  # max speed while on water; 0 = cannot swim (drowns on SURFACE water)
+    aquatic: bool = False    # confined to water: the engine reverts any move onto land (fish etc.)
     lifespan: int = 0        # max age in ticks; 0 = no old-age death (engine sweeps age>lifespan)
     strata: tuple[int, ...] = (SURFACE,)
     prop_slots: dict[str, int] = field(default_factory=dict)  # prop name -> slot
@@ -64,6 +65,7 @@ class SpeciesRegistry:
         color: str = "#cccccc",
         speed: float = 2.5,
         swim_speed: float = 0.0,
+        aquatic: bool = False,
         lifespan: int = 0,
         strata: tuple[int, ...] = (SURFACE,),
         props: tuple[str, ...] = (),
@@ -86,6 +88,7 @@ class SpeciesRegistry:
             color=color,
             speed=max(0.1, min(float(speed), 8.0)),
             swim_speed=max(0.0, min(float(swim_speed), 8.0)),
+            aquatic=bool(aquatic),
             lifespan=max(0, int(lifespan)),
             strata=tuple(strata),
             prop_slots={p: i for i, p in enumerate(props)},
@@ -127,6 +130,10 @@ class SpeciesRegistry:
         """Per-species max swim speed (0 = drowns), indexed by species id."""
         return np.array([s.swim_speed for s in self.by_id] or [0.0], dtype=np.float32)
 
+    def aquatic_array(self) -> np.ndarray:
+        """Per-species 'aquatic' flag (confined to water), indexed by species id."""
+        return np.array([s.aquatic for s in self.by_id] or [False], dtype=bool)
+
     def lifespans_array(self) -> np.ndarray:
         """Per-species lifespan in ticks (0 = immortal), indexed by species id."""
         return np.array([s.lifespan for s in self.by_id] or [0], dtype=np.int64)
@@ -161,6 +168,7 @@ class SpeciesRegistry:
             {
                 "id": s.id, "name": s.name, "plugin": s.plugin, "size": s.size,
                 "color": s.color, "speed": s.speed, "swim_speed": s.swim_speed,
+                "aquatic": s.aquatic,
                 "lifespan": s.lifespan, "strata": list(s.strata), "prop_slots": s.prop_slots,
                 "gene_slots": s.gene_slots, "gene_defaults": s.gene_defaults,
                 "gene_sigma": s.gene_sigma,
@@ -176,7 +184,8 @@ class SpeciesRegistry:
             sp = Species(
                 id=d["id"], name=d["name"], plugin=d["plugin"], size=d["size"],
                 color=d["color"], speed=d.get("speed", 2.5),
-                swim_speed=d.get("swim_speed", 0.0), lifespan=d.get("lifespan", 0),
+                swim_speed=d.get("swim_speed", 0.0), aquatic=d.get("aquatic", False),
+                lifespan=d.get("lifespan", 0),
                 strata=tuple(d["strata"]), prop_slots=dict(d["prop_slots"]),
                 gene_slots=dict(d.get("gene_slots", {})),
                 gene_defaults=dict(d.get("gene_defaults", {})),

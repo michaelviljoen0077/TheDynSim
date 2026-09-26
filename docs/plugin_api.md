@@ -104,6 +104,7 @@ species count — is what limits performance. So:
 
 ### Queries (any species)
 - `world.entities(species) -> list[handle]` · `world.count(species) -> int`
+  (an unregistered species — e.g. one whose plugin isn't installed — reads as `[]` / `0`)
 - `world.pos(handle) -> (x, y, z)` · `world.get(handle, prop) -> float` (props: declared slots, `"energy"`, `"age"`)
 - `world.nearest(handle, species=None, radius=10.0) -> handle | None` — same stratum only.
 - `world.within(handle, radius, species=None) -> list[handle]` — same stratum only.

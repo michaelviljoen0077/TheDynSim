@@ -9,6 +9,7 @@ const WINDOW = 120; // samples kept (~2 min at 1 Hz)
 
 interface Sample {
   tick: number;
+  epoch: number;
   populations: Record<string, number>;
   diversity: number;
   flora: number;
@@ -29,11 +30,15 @@ export function MetricsPanel() {
       void fetchJson<MetricsSnapshot>('/api/metrics')
         .then((m) => {
           setSamples((prev) => {
-            if (prev.length && prev[prev.length - 1].tick === m.tick) return prev;
+            const last = prev.length ? prev[prev.length - 1] : null;
+            if (last && last.epoch === m.epoch && last.tick === m.tick) return prev;
+            // A reset or rollback starts a new timeline: drop the old run's samples.
+            const kept = last && (last.epoch !== m.epoch || m.tick < last.tick) ? [] : prev;
             const next = [
-              ...prev,
+              ...kept,
               {
                 tick: m.tick,
+                epoch: m.epoch,
                 populations: m.populations,
                 diversity: m.shannonDiversity,
                 flora: m.floraDensity,
@@ -64,9 +69,10 @@ export function MetricsPanel() {
   const firstTick = samples.length ? samples[0].tick : 0;
   const lastTick = samples.length ? samples[samples.length - 1].tick : 0;
   const span = Math.max(1, lastTick - firstTick);
+  const epoch = samples.length ? samples[samples.length - 1].epoch : 0;
 
   const markers: ChartMarker[] = interventions
-    .filter((iv) => iv.tick >= firstTick && iv.tick <= lastTick)
+    .filter((iv) => iv.epoch === epoch && iv.tick >= firstTick && iv.tick <= lastTick)
     .map((iv) => ({
       pos: (iv.tick - firstTick) / span,
       color: iv.kind === 'rollback' ? '#ff8a7a' : '#3ddc84',

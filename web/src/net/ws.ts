@@ -91,7 +91,10 @@ function decodeEntities(buf: ArrayBuffer, tick: number, epoch: number, n: number
 
   const now = performance.now();
   // Never interpolate across an epoch boundary (reset/rollback teleports).
-  const prev = live.curr && live.curr.epoch === epoch ? live.curr : null;
+  // A reset builds a fresh world that can reuse the same epoch, so a tick going
+  // backwards is also a boundary.
+  const prev =
+    live.curr && live.curr.epoch === epoch && live.curr.tick < tick ? live.curr : null;
 
   // Match entities by generational id once per network frame so the 60 FPS
   // render loop can lerp prev->curr with a plain indexed lookup.

@@ -18,9 +18,14 @@ export function InspectorPanel() {
       setGone(false);
       return;
     }
+    // Drop the previous entity's details and ignore its in-flight responses.
+    let cancelled = false;
+    setDetail(null);
+    setGone(false);
     const poll = () => {
       void fetchJson<EntityDetail>(`/api/entity/${selected}`)
         .then((d) => {
+          if (cancelled) return;
           if (d.error !== undefined) {
             setGone(true);
           } else {
@@ -32,7 +37,10 @@ export function InspectorPanel() {
     };
     poll();
     const timer = window.setInterval(poll, POLL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [selected]);
 
   if (selected === null) return null;

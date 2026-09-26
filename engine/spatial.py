@@ -31,8 +31,12 @@ class SpatialHash:
         self.xs: list[float] = []
         self.ys: list[float] = []
 
-    def _wrap_cell(self, c: int) -> int:
-        return c % self.ncell if self.wrap else c
+    def _cell_span(self, c0: int, reach: int) -> list[int]:
+        """Cell indices c0-reach..c0+reach; when wrapping, each cell at most once."""
+        if not self.wrap:
+            return list(range(c0 - reach, c0 + reach + 1))
+        # a reach wider than the world would otherwise visit (and report) cells twice
+        return list(dict.fromkeys((c0 + d) % self.ncell for d in range(-reach, reach + 1)))
 
     def _delta(self, a: float, b: float) -> float:
         """b - a, min-image (shortest path across the seam) when wrapping."""
@@ -52,8 +56,14 @@ class SpatialHash:
         idx = np.flatnonzero(store.alive)
         if idx.size:
             inv = 1.0 / self.cell
-            cx = (store.px[idx] * inv).astype(np.int32).tolist()
-            cy = (store.py[idx] * inv).astype(np.int32).tolist()
+            cx = (store.px[idx] * inv).astype(np.int32)
+            cy = (store.py[idx] * inv).astype(np.int32)
+            if self.wrap:
+                # size need not be a multiple of cell: the partial last cell folds
+                # into cell 0, matching the wrapped indices queries look up
+                cx %= self.ncell
+                cy %= self.ncell
+            cx, cy = cx.tolist(), cy.tolist()
             strata = store.stratum[idx].tolist()
             species = store.species_id[idx].tolist()
             for i, sx, sy, st, sp in zip(idx.tolist(), cx, cy, strata, species, strict=True):
@@ -93,13 +103,15 @@ class SpatialHash:
         r2 = radius * radius
         c0x, c0y = int(x / self.cell), int(y / self.cell)
         reach = max(1, math.ceil(radius / self.cell))
-        wrap_cell, delta = self._wrap_cell, self._delta
+        delta = self._delta
+        span_x = self._cell_span(c0x, reach)
+        span_y = self._cell_span(c0y, reach)
         xs, ys = self.xs, self.ys
         out: list[int] = []
         for layer in layers:
-            for dx in range(-reach, reach + 1):
-                for dy in range(-reach, reach + 1):
-                    rows = layer.get((wrap_cell(c0x + dx), wrap_cell(c0y + dy)))
+            for cx in span_x:
+                for cy in span_y:
+                    rows = layer.get((cx, cy))
                     if not rows:
                         continue
                     for j in rows:
@@ -127,12 +139,14 @@ class SpatialHash:
         best, best_d = -1, radius * radius + 1e-9
         c0x, c0y = int(x / self.cell), int(y / self.cell)
         reach = max(1, math.ceil(radius / self.cell))
-        wrap_cell, delta = self._wrap_cell, self._delta
+        delta = self._delta
+        span_x = self._cell_span(c0x, reach)
+        span_y = self._cell_span(c0y, reach)
         xs, ys = self.xs, self.ys
         for layer in layers:
-            for dx in range(-reach, reach + 1):
-                for dy in range(-reach, reach + 1):
-                    rows = layer.get((wrap_cell(c0x + dx), wrap_cell(c0y + dy)))
+            for cx in span_x:
+                for cy in span_y:
+                    rows = layer.get((cx, cy))
                     if not rows:
                         continue
                     for j in rows:

@@ -25,6 +25,8 @@ BANNED_CALLS = {
 # A plugin using these can pass a shadow test yet diverge on snapshot replay.
 NONDETERMINISTIC_CALLS = {"set", "frozenset", "hash", "id"}
 BANNED_NAMES = {"random", "numpy", "np", "os", "sys", "socket", "subprocess"}
+# Module handles reachable as attributes of allowlisted modules (e.g. typing.sys).
+BANNED_ATTRS = {"os", "sys", "socket", "subprocess", "builtins", "modules"}
 META_REQUIRED = {"name", "contract", "species"}
 
 
@@ -191,6 +193,14 @@ def _walk_banned_constructs(tree: ast.Module, errors: list[Violation],
             errors.append(Violation("banned-name", f"use of {node.id!r} is not allowed (randomness must come from world.rng)", node.lineno))
         elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
             errors.append(Violation("dunder-access", f"dunder attribute access ({node.attr!r}) is not allowed", node.lineno))
+        elif isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+            # e.g. world._world: reaches engine internals past the capability facade
+            errors.append(Violation("private-access", f"private attribute access ({node.attr!r}) is not allowed — use the world API", node.lineno))
+        elif isinstance(node, ast.Attribute) and node.attr in BANNED_ATTRS:
+            errors.append(Violation("banned-name", f"attribute {node.attr!r} is not allowed", node.lineno))
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitOr, ast.BitAnd, ast.BitXor, ast.Sub)) \
+                and (_is_view_call(node.left) or _is_view_call(node.right)):
+            errors.append(Violation("non-deterministic", "set operations on dict views build a set (hash-order iteration) — use a list or dict instead", node.lineno))
         elif isinstance(node, (ast.Global, ast.Nonlocal)):
             errors.append(Violation("global-state", f"{type(node).__name__.lower()} statements are not allowed", node.lineno))
         elif isinstance(node, (ast.Import, ast.ImportFrom)) and node.col_offset > 0:
@@ -201,6 +211,11 @@ def _walk_banned_constructs(tree: ast.Module, errors: list[Violation],
                 warnings.append(Violation("unbounded-loop", "while True without break — shadow budgets will kill this", node.lineno))
         elif isinstance(node, ast.ClassDef):
             errors.append(Violation("class-def", "class definitions are not allowed in plugins", node.lineno))
+
+
+def _is_view_call(node: ast.AST) -> bool:
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+        and node.func.attr in ("keys", "items")
 
 
 def _has_break(loop: ast.While) -> bool:

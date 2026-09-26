@@ -7,6 +7,7 @@ encoding happens on the streamer side under brief lock acquisitions
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from pathlib import Path
@@ -16,6 +17,9 @@ from engine.plugin_host import PluginHost
 from engine.snapshot import capture, write_capture
 
 SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "data" / "snapshots" / "live"
+MAX_PRE_SNAPSHOTS = 5
+
+log = logging.getLogger("genesis.runner")
 
 
 class EngineRunner:
@@ -109,12 +113,31 @@ class EngineRunner:
         the lock — tens of MB of disk I/O must never stall the tick loop (NFR6).
         """
         with self.lock:
-            cap = capture(self.world)
-            path = SNAPSHOT_DIR / f"pre-{self.world.epoch}-{self.world.tick}.npz"
+            world = self.world
+            cap = capture(world)
+            path = SNAPSHOT_DIR / f"pre-{world.epoch}-{world.tick}.npz"
             record = self.host.install(source)  # raises PluginInstallError -> nothing written
-        write_capture(cap, path)
-        self.last_promotion_snapshot = path
+        # the plugin is live from here on: a failed snapshot write only costs the
+        # rollback point, it must not be reported as a failed promotion
+        try:
+            path = write_capture(cap, path)
+        except OSError:
+            log.exception("pre-promotion snapshot write failed; rollback unavailable")
+            return {"installed": record.name, "snapshot": None}
+        with self.lock:
+            # a reset during the write discarded this world: don't resurrect it
+            if self.world is world:
+                self.last_promotion_snapshot = path
+        self._prune_snapshots(keep=path)
         return {"installed": record.name, "snapshot": path.name}
+
+    @staticmethod
+    def _prune_snapshots(keep: Path, retain: int = MAX_PRE_SNAPSHOTS) -> None:
+        """Only the latest pre-promotion snapshot is a rollback target; keep a few."""
+        old = sorted(SNAPSHOT_DIR.glob("pre-*.npz"), key=lambda p: p.stat().st_mtime)
+        for p in old[:-retain]:
+            if p != keep:
+                p.unlink(missing_ok=True)
 
     def rollback(self) -> dict:
         """Restore the pre-promotion snapshot (world + plugin set), bump epoch (NFR9)."""

@@ -41,6 +41,12 @@ class InstallBody(BaseModel):
     source: str
 
 
+def _species_key(world) -> tuple:
+    """Everything a client's species legend depends on (resync when it changes)."""
+    return (world.epoch, tuple(
+        (s.id, s.name, s.plugin, s.color, s.size) for s in world.registry.by_id))
+
+
 def create_app(seed: int = 424242, world_size: int = 640) -> FastAPI:
     sources = [(PLUGINS_DIR / name).read_text() for name in BASE_PLUGINS]
     # toroidal world: edges join, so creatures never pile up against a wall
@@ -266,9 +272,9 @@ def create_app(seed: int = 424242, world_size: int = 640) -> FastAPI:
             with runner.lock:
                 sync = protocol.sync_message(runner.world)
                 terrain = protocol.encode_terrain(runner.world)
+                species_key = _species_key(runner.world)
             await ws.send_json(sync)
             await ws.send_bytes(terrain)
-            species_count = len(sync["species"])
             while True:
                 loop_t0 = asyncio.get_event_loop().time()
                 resync = None
@@ -280,8 +286,11 @@ def create_app(seed: int = 424242, world_size: int = 640) -> FastAPI:
                     if frame_no % FIELD_EVERY == 0:
                         field_id = FIELDS[(frame_no // FIELD_EVERY) % len(FIELDS)]
                         field_frame = protocol.encode_field(world, field_id)
-                    if len(world.registry.by_id) != species_count:
-                        species_count = len(world.registry.by_id)
+                    # lineage replacement restyles species in place and rollback
+                    # can swap them without changing the count: compare contents
+                    key = _species_key(world)
+                    if key != species_key:
+                        species_key = key
                         resync = protocol.sync_message(world)
                 async with asyncio.timeout(SEND_TIMEOUT_S):
                     if resync is not None:

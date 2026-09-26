@@ -8,6 +8,7 @@ produced a candidate.
 
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
@@ -62,16 +63,23 @@ class LLMProvider(Protocol):
 
 def _parse_proposal(text: str) -> CandidateProposal:
     data = json.loads(text)
+    if not isinstance(data, dict):
+        raise GenerationError(f"proposal must be a JSON object, got {type(data).__name__}")
     missing = [k for k in PROPOSAL_SCHEMA["required"] if k not in data]
     if missing:
         raise GenerationError(f"proposal missing keys: {missing}")
+    try:
+        confidence = float(data["confidence"])
+    except (TypeError, ValueError) as e:
+        raise GenerationError(f"proposal confidence is not a number: {data['confidence']!r}") from e
+    parent = data.get("lineage_parent")
     return CandidateProposal(
         analysis=str(data["analysis"]),
         hypothesis=str(data["hypothesis"]),
         expected_outcome=str(data["expected_outcome"]),
-        confidence=float(data["confidence"]),
+        confidence=confidence,
         plugin_source=str(data["plugin_source"]),
-        lineage_parent=data.get("lineage_parent"),
+        lineage_parent=parent if isinstance(parent, str) else None,
     )
 
 
@@ -121,7 +129,8 @@ class OllamaProvider:
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
                     data = json.loads(resp.read())
-            except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            except (urllib.error.URLError, OSError, http.client.HTTPException,
+                    json.JSONDecodeError) as e:
                 last_error = f"transport: {e}"
                 continue
             usage.latency_s += time.perf_counter() - t0
@@ -129,7 +138,7 @@ class OllamaProvider:
             usage.tokens_out += int(data.get("eval_count", 0))
             try:
                 return _parse_proposal(data["message"]["content"]), usage
-            except (GenerationError, json.JSONDecodeError, KeyError) as e:
+            except (GenerationError, json.JSONDecodeError, KeyError, TypeError) as e:
                 last_error = f"malformed: {e}"
                 continue
         raise GenerationError(f"generation failed after {1 + self.retries} attempts: {last_error}")

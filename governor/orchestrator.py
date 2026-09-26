@@ -25,6 +25,7 @@ from governor.notebook import Notebook
 from governor.shadow import Budgets, ShadowJob, run_shadow_batch
 
 log = logging.getLogger("genesis.governor")
+_DEFAULT_SNAPSHOT_DIR = Path(__file__).resolve().parent.parent / "data" / "snapshots" / "governor"
 
 API_REFERENCE_PATH = Path(__file__).resolve().parent.parent / "docs" / "plugin_api.md"
 
@@ -90,7 +91,7 @@ class CycleStatus:
 class Orchestrator:
     def __init__(self, runner, notebook: Notebook, provider: LLMProvider,
                  config: GovernorConfig | None = None,
-                 snapshot_dir: str | Path = "data/snapshots/governor") -> None:
+                 snapshot_dir: str | Path = _DEFAULT_SNAPSHOT_DIR) -> None:
         self.runner = runner
         self.notebook = notebook
         self.provider = provider
@@ -98,6 +99,8 @@ class Orchestrator:
         self.snapshot_dir = Path(snapshot_dir)
         self.status = CycleStatus()
         self._busy = threading.Lock()
+        self._cycle_id: str | None = None
+        self._cycle_snapshot: Path | None = None
         self._last_promotion: dict | None = None   # {cycle_id, plugin_name, expected, report}
         # cadence anchor: first automatic cycle waits a full interval from startup
         self.last_cycle_end_tick: int = runner.world.tick if runner is not None else 0
@@ -106,9 +109,18 @@ class Orchestrator:
 
     def run_cycle_async(self) -> bool:
         """Fire a cycle on a worker thread; returns False if one is already running."""
-        if self._busy.locked():
+        # take the lock here, not in the thread: two callers racing a
+        # locked() check could otherwise both start a cycle
+        if not self._busy.acquire(blocking=False):
             return False
-        threading.Thread(target=self.run_cycle, name="governor-cycle", daemon=True).start()
+
+        def work() -> None:
+            try:
+                self._run_locked()
+            finally:
+                self._busy.release()
+
+        threading.Thread(target=work, name="governor-cycle", daemon=True).start()
         return True
 
     def due(self) -> bool:
@@ -116,18 +128,34 @@ class Orchestrator:
         if self._busy.locked():
             return False
         ticks_since = self.runner.world.tick - self.last_cycle_end_tick
+        if ticks_since < 0:
+            # reset/rollback moved the clock backwards: re-anchor instead of
+            # waiting for the new timeline to catch up with the old one
+            self.last_cycle_end_tick = self.runner.world.tick
+            return False
         return ticks_since >= self.config.cycle_every_ticks
 
     def run_cycle(self) -> str:
         with self._busy:
-            try:
-                return self._cycle()
-            except Exception as e:  # noqa: BLE001 — a cycle failure must never propagate
-                log.exception("cycle failed")
-                self.status = CycleStatus("idle", detail=f"cycle error: {e}")
-                return "error"
-            finally:
-                self.last_cycle_end_tick = self.runner.world.tick
+            return self._run_locked()
+
+    def _run_locked(self) -> str:
+        self._cycle_id = None
+        self._cycle_snapshot = None
+        try:
+            return self._cycle()
+        except Exception as e:  # noqa: BLE001 — a cycle failure must never propagate
+            log.exception("cycle failed")
+            if self._cycle_id is not None:
+                # never leave the notebook row stuck at 'in_progress'
+                self.notebook.finish_cycle(self._cycle_id, "error")
+            self.status = CycleStatus("idle", self._cycle_id, f"cycle error: {e}")
+            return "error"
+        finally:
+            self.last_cycle_end_tick = self.runner.world.tick
+            if self._cycle_snapshot is not None:
+                # only the shadow batch reads it; tens of MB per cycle otherwise pile up
+                self._cycle_snapshot.unlink(missing_ok=True)
 
     # -- the cycle ------------------------------------------------------------------
 
@@ -143,10 +171,11 @@ class Orchestrator:
             ]
             snap_path = self.snapshot_dir / f"cycle-{world.epoch}-{world.tick}.npz"
             cap = capture(world)  # fast in-memory copy under the lock
-        write_capture(cap, snap_path)  # slow disk write outside the lock (NFR6)
+        self._cycle_snapshot = write_capture(cap, snap_path)  # disk write outside the lock (NFR6)
 
         cycle_id = self.notebook.start_cycle(report["epoch"], report["tick"], report,
                                              self.provider.name)
+        self._cycle_id = cycle_id
         self.status = CycleStatus("generating", cycle_id)
 
         # close the loop on the previous promotion (FR17)

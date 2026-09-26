@@ -65,7 +65,7 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
   const hypothesis = meta.hypothesis ?? '';
   const validationErrors =
     candidate.validation !== null && !candidate.validation.ok
-      ? candidate.validation.errors
+      ? candidate.validation.errors ?? []
       : [];
   const shadowReason =
     candidate.fate === 'rejected_shadow'
@@ -103,7 +103,7 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
             </div>
           )}
 
-          {candidate.fitness_breakdown !== null && (
+          {candidate.fitness_breakdown?.breakdown && (
             <div>
               <div className="evo-detail-k">fitness breakdown</div>
               <FitnessBars breakdown={candidate.fitness_breakdown.breakdown} />

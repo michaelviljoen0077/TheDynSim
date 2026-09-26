@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import math
 import time
+import types
 import typing
 from dataclasses import dataclass, field
 
 from engine.core import World
+from engine.entities import SpeciesRegistry
 from engine.validator import validate_plugin
 from engine.world_api import PluginError, WorldAPI
 
@@ -39,7 +41,13 @@ SAFE_BUILTINS = {
     or (not isinstance(__builtins__, dict) and hasattr(__builtins__, name))
 }
 
-_IMPORTABLE = {"math": math, "typing": typing}
+# Plugins get a copy of typing's public names only — the real module also
+# exposes `typing.sys` (and through it every loaded module).
+_SAFE_TYPING = types.SimpleNamespace(**{
+    k: v for k, v in vars(typing).items()
+    if not k.startswith("_") and not isinstance(v, types.ModuleType)
+})
+_IMPORTABLE = {"math": math, "typing": _SAFE_TYPING}
 
 
 def _restricted_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: A002
@@ -107,7 +115,7 @@ class PluginHost:
                 replacing = parent
                 adoptable = set(parent.meta.get("species", [])) & set(meta["species"])
 
-        namespace = {"__builtins__": dict(SAFE_BUILTINS), "math": math, "typing": typing}
+        namespace = {"__builtins__": dict(SAFE_BUILTINS), "math": math, "typing": _SAFE_TYPING}
         code = compile(source, f"<plugin:{name}>", "exec")
         try:
             exec(code, namespace)  # noqa: S102 — source passed the AST gate above
@@ -121,6 +129,12 @@ class PluginHost:
                     [{"code": "contract-missing", "message": f"{fn} is not callable after exec", "line": 0}]
                 )
 
+        # a failed setup must leave no trace in the world: remember what it can touch
+        world = self.world
+        pre_setup = (
+            world.registry.to_state(), len(world.commands.ops), len(world.commands.flora_bites),
+            name in world.plugin_rngs, name in world.plugin_stores,
+        )
         plugin_id = len(self.order)
         api = WorldAPI(self.world, name, plugin_id, list(meta["species"]),
                        adoptable_species=adoptable)
@@ -133,14 +147,19 @@ class PluginHost:
             try:
                 record.setup_fn(api)
             except Exception as e:  # noqa: BLE001 — error boundary, recorded
+                self._undo_setup(name, pre_setup)
                 raise PluginInstallError(
                     [{"code": "setup-error", "message": f"{type(e).__name__}: {e}", "line": 0}]
                 ) from e
             # setup runs at promotion time, outside a tick: apply its buffered
-            # effects now so the plugin's initial population exists atomically
-            self.world.commands.apply(self.world.store, float(self.world.config.size),
-                                      flora=self.world.flora.density,
-                                      speeds=self.world.registry.speeds_array())
+            # effects now so the plugin's initial population exists atomically.
+            # Same arguments as World.step, so setup spawns obey the topology.
+            world.commands.apply(world.store, float(world.config.size),
+                                 flora=world.flora.density,
+                                 speeds=world.registry.speeds_array(),
+                                 water=world.terrain.water_mask,
+                                 swim_speeds=world.registry.swim_speeds_array(),
+                                 wrap=world.config.wrap)
             if replacing is not None:
                 replacing.status = "retired"
                 replacing.events.append(
@@ -149,6 +168,18 @@ class PluginHost:
         self.order.append(name)
         self._sync_manifest()
         return record
+
+    def _undo_setup(self, name: str, pre_setup: tuple) -> None:
+        """Roll back everything a failed setup() may have left in the world."""
+        reg_state, n_ops, n_bites, had_rng, had_store = pre_setup
+        world = self.world
+        world.registry = SpeciesRegistry.from_state(reg_state, world.registry.max_prop_slots)
+        del world.commands.ops[n_ops:]
+        del world.commands.flora_bites[n_bites:]
+        if not had_rng:
+            world.plugin_rngs.pop(name, None)
+        if not had_store:
+            world.plugin_stores.pop(name, None)
 
     @classmethod
     def rebind(cls, world: World) -> PluginHost:

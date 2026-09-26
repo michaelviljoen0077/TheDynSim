@@ -48,6 +48,13 @@ function SpeciesMesh({
   );
 }
 
+function wrapDelta(d: number, size: number): number {
+  if (size <= 0) return d;
+  if (d > size / 2) return d - size;
+  if (d < -size / 2) return d + size;
+  return d;
+}
+
 export function Entities() {
   const species = useStore((s) => s.sync?.species);
   const meshes = useRef(new Map<number, THREE.InstancedMesh>());
@@ -71,6 +78,7 @@ export function Entities() {
     }
     const { hiddenSpecies, strata, sync } = useStore.getState();
     const heightScale = sync?.heightScale ?? 24;
+    const size = sync?.size ?? 0;
     const prev = live.prev;
     // Render between the last two frames: alpha in [0,1] over the frame interval.
     const alpha = prev
@@ -90,9 +98,14 @@ export function Entities() {
       let z = curr.z[i];
       const j = curr.prevIndex[i];
       if (prev && j >= 0) {
-        x = prev.x[j] + (x - prev.x[j]) * alpha;
-        y = prev.y[j] + (y - prev.y[j]) * alpha;
+        // The world is toroidal: lerp the short way across the seam, not across the map.
+        x = prev.x[j] + wrapDelta(x - prev.x[j], size) * alpha;
+        y = prev.y[j] + wrapDelta(y - prev.y[j], size) * alpha;
         z = prev.z[j] + (z - prev.z[j]) * alpha;
+        if (size > 0) {
+          x = ((x % size) + size) % size;
+          y = ((y % size) + size) % size;
+        }
       }
       const ground = heightAt(x, y) * heightScale;
       // Stratum band offsets: surface hugs the ground, sky floats in a band,
@@ -115,6 +128,8 @@ export function Entities() {
     map.forEach((m, id) => {
       m.count = counters.get(id) ?? 0;
       m.instanceMatrix.needsUpdate = true;
+      // three caches the raycast bounding sphere from the first pick; instances move.
+      m.boundingSphere = null;
     });
   });
 

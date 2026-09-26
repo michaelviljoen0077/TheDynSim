@@ -11,6 +11,8 @@ notebook consume (FR8).
 
 from __future__ import annotations
 
+import math
+
 from engine.core import World
 from engine.entities import GEN_BITS, SKY, SURFACE, UNDERGROUND
 
@@ -31,6 +33,13 @@ class CapabilityViolation(PluginError):
     pass
 
 
+def _finite(*values: float) -> None:
+    """Reject NaN/inf before it reaches the command buffer (it would corrupt positions)."""
+    for v in values:
+        if not math.isfinite(float(v)):
+            raise CapabilityViolation("non-finite", f"value must be a finite number, got {v!r}")
+
+
 class PluginStore:
     """Plugin-scoped persistent key-value state (snapshot-included), quota-capped."""
 
@@ -42,6 +51,11 @@ class PluginStore:
         return self._data.get(key, default)
 
     def set(self, key: str, value: float | int | str) -> None:
+        if not isinstance(key, str):
+            # non-str keys don't survive the JSON snapshot (and mixed types break it)
+            raise CapabilityViolation("store-type", "world.store keys must be str")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise CapabilityViolation("store-type", "world.store values must be finite")
         if not isinstance(value, (int, float, str)):
             raise CapabilityViolation("store-type", "world.store values must be int/float/str")
         if key not in self._data and len(self._data) >= self._max_keys:
@@ -87,6 +101,14 @@ class WorldAPI:
                 "not-owned", f"plugin {self._plugin_name!r} does not own species {name!r}"
             )
         return sp
+
+    def _cell(self, x: float, y: float) -> tuple[int, int]:
+        """Grid cell for (x, y): wrapped on a toroidal world, clamped on a flat one."""
+        size = self._world.config.size
+        ix, iy = int(math.floor(x)), int(math.floor(y))
+        if self._world.config.wrap:
+            return ix % size, iy % size
+        return min(max(ix, 0), size - 1), min(max(iy, 0), size - 1)
 
     def _row(self, handle: int) -> int:
         if not self._world.store.is_valid(handle):
@@ -146,6 +168,7 @@ class WorldAPI:
         dropped and counted in `spawn_drops` — it must never abort the tick or
         push a healthy plugin toward quarantine (a booming herd is not a bug)."""
         sp = self._owned(species)
+        _finite(x, y, z, energy)
         cfg = self._world.config
         self._spawns_this_tick += 1
         # count this species' pending spawns this tick toward its hard cap
@@ -165,12 +188,18 @@ class WorldAPI:
     # -- queries (tick-start state) ---------------------------------------------
 
     def entities(self, species: str) -> list[int]:
-        sp = self._species(species)
+        """Handles of a species' live entities ([] if the species isn't registered)."""
+        sp = self._world.registry.by_name.get(species)
+        if sp is None:
+            return []
         rows = self._world.store.alive_indices(sp.id)
         return self._world.store.handles_of(rows)
 
     def count(self, species: str) -> int:
-        sp = self._species(species)
+        """Live count of a species (0 if it isn't registered, e.g. its plugin is absent)."""
+        sp = self._world.registry.by_name.get(species)
+        if sp is None:
+            return 0
         return int(self._world.store.alive_indices(sp.id).size)
 
     def pos(self, handle: int) -> tuple[float, float, float]:
@@ -217,10 +246,12 @@ class WorldAPI:
 
     def move(self, handle: int, dx: float, dy: float, dz: float = 0.0) -> None:
         self._owned_row(handle)
+        _finite(dx, dy, dz)
         self._world.commands.move(handle, float(dx), float(dy), float(dz))
 
     def set(self, handle: int, prop: str, value: float) -> None:
         row = self._owned_row(handle)
+        _finite(value)
         s = self._world.store
         if prop == "energy":
             self._world.commands.set_energy(handle, float(value))
@@ -250,6 +281,7 @@ class WorldAPI:
         """
         row = self._row(handle)
         s = self._world.store
+        _finite(amount)
         drained = min(float(s.energy[row]), max(0.0, float(amount)))
         self._world.commands.drain_energy(handle, drained)
         return drained
@@ -257,9 +289,8 @@ class WorldAPI:
     # -- environment ---------------------------------------------------------------
 
     def flora_at(self, x: float, y: float) -> float:
-        size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
+        _finite(x, y)
+        ix, iy = self._cell(x, y)
         return float(self._world.flora.density[ix, iy])
 
     def eat_flora(self, x: float, y: float, amount: float) -> float:
@@ -270,24 +301,21 @@ class WorldAPI:
         the tick, execution order can't leak between plugins, and the grass can
         never be over-consumed.
         """
-        size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
+        _finite(x, y)
+        ix, iy = self._cell(x, y)
         avail = float(self._world.flora.density[ix, iy])
         bite = min(avail, max(0.0, float(amount)))
         self._world.commands.eat_flora(ix, iy, bite)
         return bite
 
     def water_at(self, x: float, y: float) -> bool:
-        size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
+        _finite(x, y)
+        ix, iy = self._cell(x, y)
         return bool(self._world.terrain.water_mask[ix, iy] > 0.5)
 
     def height_at(self, x: float, y: float) -> float:
-        size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
+        _finite(x, y)
+        ix, iy = self._cell(x, y)
         return float(self._world.terrain.height[ix, iy])
 
     def weather(self) -> dict:
@@ -298,9 +326,8 @@ class WorldAPI:
         }
 
     def temperature_at(self, x: float, y: float) -> float:
-        size = self._world.config.size
-        ix = min(max(int(x), 0), size - 1)
-        iy = min(max(int(y), 0), size - 1)
+        _finite(x, y)
+        ix, iy = self._cell(x, y)
         return float(self._world.weather.temperature[ix, iy])
 
     def season(self) -> float:
@@ -327,6 +354,8 @@ class WorldAPI:
         """A random non-water surface location, drawn from the plugin RNG."""
         size = self._world.config.size
         land = self._world.terrain.land_points
+        if len(land) == 0:
+            raise CapabilityViolation("no-land", "the world has no land to place entities on")
         i = int(self.rng.integers(0, len(land)))
         gx, gy = land[i]
         return (

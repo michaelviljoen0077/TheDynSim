@@ -9,9 +9,11 @@ Spec package: [docs/brief.md](docs/brief.md) → [docs/prd.md](docs/prd.md) →
 
 ## Quickstart (Windows 11)
 
+Requires Python 3.12+ and Node 18+.
+
 ```powershell
 python -m pip install -e .[dev,server]
-python -m pytest                      # 25 tests: determinism, snapshots, streaming, GIL gate
+python -m pytest                      # determinism, snapshots, streaming, GIL gate, governor
 python scripts/bench_engine.py        # benchmark protocol (docs/architecture.md)
 ```
 
